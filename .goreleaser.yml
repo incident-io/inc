@@ -1,0 +1,54 @@
+version: 2
+project_name: inc
+
+env:
+  - CGO_ENABLED=0
+
+before:
+  hooks:
+    - ./scripts/completions.sh
+
+builds:
+  - main: .
+    binary: inc
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/incident-io/inc/cmd.version={{.Version}}
+      - -X github.com/incident-io/inc/cmd.commit={{.ShortCommit}}
+      - -X github.com/incident-io/inc/cmd.date={{.Date}}
+
+brews:
+  - repository:
+      owner: incident-io
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://incident.io/"
+    description: "CLI for incident.io"
+    license: "MIT"
+    install: |
+      bin.install "inc"
+      bash_completion.install "completions/inc.bash" => "inc"
+      zsh_completion.install "completions/inc.zsh" => "_inc"
+      fish_completion.install "completions/inc.fish"
+
+archives:
+  - formats: [tar.gz]
+    files:
+      - LICENSE
+      - README*
+      - completions/*
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^ci:'

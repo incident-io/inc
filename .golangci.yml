@@ -1,0 +1,15 @@
+version: "2"
+
+linters:
+  # The standard set is errcheck, govet, ineffassign, staticcheck (which now
+  # includes gosimple), and unused.
+  default: standard
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/incident-io/inc
