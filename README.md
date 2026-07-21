@@ -7,7 +7,11 @@ Built for both humans and LLM agents — every command supports `--output json` 
 ## Install
 
 ```bash
+# Homebrew
 brew install incident-io/tap/inc
+
+# mise
+mise use -g ubi:incident-io/inc
 ```
 
 Or download a binary from [GitHub Releases](https://github.com/incident-io/inc/releases).
