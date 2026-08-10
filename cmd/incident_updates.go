@@ -49,5 +49,5 @@ func runIncidentUpdatesList(cmd *cobra.Command, args []string) error {
 			return nil, 0, err
 		}
 		return resp.Body, resp.StatusCode(), nil
-	})
+	}, PaginateOpts{DefaultFields: "id,incident_id,new_incident_status,new_severity,created_at"})
 }

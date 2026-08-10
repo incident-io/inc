@@ -87,6 +87,21 @@ func getOutputFlags(cmd *cobra.Command) (format, jqExpr, fields string) {
 	return
 }
 
+// withDefaultFields applies a command's default table columns when the user
+// hasn't picked their own with --fields. Table output only: JSON always
+// carries every field the API returned.
+//
+// List commands declare their columns identifier first (id, or reference where
+// the API has one), then the human-readable label, then one or two fields that
+// distinguish rows, then created_at where it earns its place. Four or five
+// columns keeps the table inside a normal terminal.
+func withDefaultFields(format, fields, defaults string) string {
+	if fields == "" && format == "table" {
+		return defaults
+	}
+	return fields
+}
+
 // resolveFormat picks the output format. An explicit --output flag always
 // wins; piped output defaults to JSON for scripted usage; otherwise the
 // default_output config value applies. An empty configDefault means the

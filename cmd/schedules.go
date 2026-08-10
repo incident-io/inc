@@ -85,7 +85,7 @@ func runSchedulesList(cmd *cobra.Command, args []string) error {
 			return nil, 0, err
 		}
 		return resp.Body, resp.StatusCode(), nil
-	})
+	}, PaginateOpts{DefaultFields: "id,name,timezone,created_at"})
 }
 
 func runSchedulesShow(cmd *cobra.Command, args []string) error {

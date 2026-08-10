@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -181,6 +182,49 @@ func TestSeveritiesList_UnwrapsEnvelope(t *testing.T) {
 	}
 	if len(items) != 1 || items[0]["name"] != "Major" {
 		t.Errorf("expected unwrapped severities array, got: %s", res.stdout)
+	}
+}
+
+func TestEscalationsList_TableUsesCuratedColumns(t *testing.T) {
+	srv := newStubServer(t)
+	srv.respond("GET /v2/escalations",
+		`{"escalations":[{"id":"01ESC","title":"Queue build-up","status":"resolved",
+		  "priority":{"name":"Urgent"},"created_at":"2026-07-31T09:23:53.868Z",
+		  "escalation_path_id":"01PATH","creator":{"alert":{"id":"01AL","title":"noisy"}},
+		  "events":[{"id":"e1"}],"related_alerts":[],"related_incidents":[]}],
+		  "pagination_meta":{}}`)
+
+	res := runCommand(t, srv.args("escalations", "list", "--output", "table")...)
+
+	if res.exit != 0 {
+		t.Fatalf("exit = %d, stderr: %s", res.exit, res.stderr)
+	}
+	// Exact columns in order: proves the noisy ones (creator, events,
+	// related_alerts...) are gone, not just that the wanted ones are present.
+	header := strings.Fields(strings.SplitN(res.stdout, "\n", 2)[0])
+	want := []string{"id", "title", "status", "priority", "created_at"}
+	if !slices.Equal(header, want) {
+		t.Errorf("header = %v, want %v", header, want)
+	}
+}
+
+func TestEscalationsList_JSONKeepsEveryField(t *testing.T) {
+	srv := newStubServer(t)
+	srv.respond("GET /v2/escalations",
+		`{"escalations":[{"id":"01ESC","title":"Queue build-up","escalation_path_id":"01PATH"}],"pagination_meta":{}}`)
+
+	res := runCommand(t, srv.args("escalations", "list")...)
+
+	if res.exit != 0 {
+		t.Fatalf("exit = %d, stderr: %s", res.exit, res.stderr)
+	}
+	var items []map[string]any
+	if err := json.Unmarshal([]byte(res.stdout), &items); err != nil {
+		t.Fatal(err)
+	}
+	// Default columns are a table concern: JSON must not be filtered.
+	if _, ok := items[0]["escalation_path_id"]; !ok {
+		t.Errorf("JSON output must keep non-default fields, got: %s", res.stdout)
 	}
 }
 

@@ -70,6 +70,30 @@ func TestResolveFormat(t *testing.T) {
 	}
 }
 
+func TestWithDefaultFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		format   string
+		fields   string
+		defaults string
+		want     string
+	}{
+		{"applies on table when unset", "table", "", "id,name", "id,name"},
+		{"explicit fields win", "table", "title", "id,name", "title"},
+		{"json keeps every field", "json", "", "id,name", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := withDefaultFields(tt.format, tt.fields, tt.defaults)
+			if got != tt.want {
+				t.Errorf("withDefaultFields(%q, %q, %q) = %q, want %q",
+					tt.format, tt.fields, tt.defaults, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleAPIResponse_EmptyBody(t *testing.T) {
 	err := handleAPIResponse(500, []byte(`{}`))
 	var apiErr *api.APIError

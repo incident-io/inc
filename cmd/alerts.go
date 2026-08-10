@@ -71,7 +71,7 @@ func runAlertsList(cmd *cobra.Command, args []string) error {
 			return nil, 0, err
 		}
 		return resp.Body, resp.StatusCode(), nil
-	})
+	}, PaginateOpts{DefaultFields: "id,title,status,created_at"})
 }
 
 func runAlertsShow(cmd *cobra.Command, args []string) error {

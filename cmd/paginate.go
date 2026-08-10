@@ -21,19 +21,11 @@ type PaginateOpts struct {
 }
 
 // paginate fetches all pages, unwraps each envelope, collects items, and prints.
-func paginate(cmd *cobra.Command, envelopeKey string, fetch PageFetcher) error {
-	return paginateWith(cmd, envelopeKey, fetch, PaginateOpts{})
-}
-
-// paginateWith is like paginate but accepts options for default table fields.
-func paginateWith(cmd *cobra.Command, envelopeKey string, fetch PageFetcher, opts PaginateOpts) error {
+func paginate(cmd *cobra.Command, envelopeKey string, fetch PageFetcher, opts PaginateOpts) error {
 	format, jqExpr, fields := getOutputFlags(cmd)
 	limit, _ := cmd.Flags().GetInt("limit")
 
-	// Apply default table fields if user didn't specify --fields and we're in table mode
-	if fields == "" && format == "table" && opts.DefaultFields != "" {
-		fields = opts.DefaultFields
-	}
+	fields = withDefaultFields(format, fields, opts.DefaultFields)
 
 	// Default to 30 results in TTY mode to avoid fetching everything
 	autoLimited := false

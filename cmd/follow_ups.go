@@ -56,9 +56,7 @@ func runFollowUpsList(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
-	if fields == "" && format == "table" {
-		fields = "title,status,assignee,priority,incident_id"
-	}
+	fields = withDefaultFields(format, fields, "id,title,status,assignee,priority")
 	data, err := output.UnwrapEnvelope(resp.Body, "follow_ups")
 	if err != nil {
 		return err

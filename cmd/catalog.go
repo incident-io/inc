@@ -141,6 +141,7 @@ func runCatalogTypesList(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, "id,name,type_name,created_at")
 	data, err := output.UnwrapEnvelope(resp.Body, "catalog_types")
 	if err != nil {
 		return err
@@ -244,7 +245,7 @@ func runCatalogEntriesList(cmd *cobra.Command, args []string) error {
 			return nil, 0, err
 		}
 		return resp.Body, resp.StatusCode(), nil
-	})
+	}, PaginateOpts{DefaultFields: "id,name,rank,created_at"})
 }
 
 func runCatalogEntriesShow(cmd *cobra.Command, args []string) error {

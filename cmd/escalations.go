@@ -91,7 +91,7 @@ func runEscalationsList(cmd *cobra.Command, args []string) error {
 			return nil, 0, err
 		}
 		return resp.Body, resp.StatusCode(), nil
-	})
+	}, PaginateOpts{DefaultFields: "id,title,status,priority,created_at"})
 }
 
 func runEscalationsShow(cmd *cobra.Command, args []string) error {
@@ -173,7 +173,7 @@ func runEscalationPathsList(cmd *cobra.Command, args []string) error {
 			return nil, 0, err
 		}
 		return resp.Body, resp.StatusCode(), nil
-	})
+	}, PaginateOpts{DefaultFields: "id,name,current_responders"})
 }
 
 func runEscalationPathsShow(cmd *cobra.Command, args []string) error {

@@ -45,6 +45,7 @@ func runSeveritiesList(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, "id,name,rank")
 	data, err := output.UnwrapEnvelope(resp.Body, "severities")
 	if err != nil {
 		return err
