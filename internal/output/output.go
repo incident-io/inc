@@ -9,7 +9,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/itchyny/gojq"
 	"github.com/mattn/go-isatty"
@@ -75,6 +74,19 @@ func printJSON(w io.Writer, jqExpr, fields string, data json.RawMessage) error {
 }
 
 func printTable(w io.Writer, fields string, data json.RawMessage) error {
+	// Only a terminal has a width worth fitting to. Piped table output stays
+	// complete, so anything parsing it sees whole values.
+	maxWidth := 0
+	if IsTTY() {
+		maxWidth = terminalWidth()
+	}
+	return printTableWidth(w, fields, data, maxWidth)
+}
+
+// printTableWidth renders a table constrained to maxWidth, where zero or less
+// means unconstrained. Split out from printTable so tests can drive real widths
+// through the renderer without owning a terminal.
+func printTableWidth(w io.Writer, fields string, data json.RawMessage, maxWidth int) error {
 	// Try to parse as an array of objects
 	var items []map[string]any
 	if err := json.Unmarshal(data, &items); err != nil {
@@ -106,25 +118,25 @@ func printTable(w io.Writer, fields string, data json.RawMessage) error {
 		sort.Strings(cols)
 	}
 
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-
-	// Header
-	if _, err := fmt.Fprintln(tw, strings.Join(cols, "\t")); err != nil {
-		return err
-	}
-
-	// Rows
+	rows := make([][]string, 0, len(items))
 	for _, item := range items {
 		vals := make([]string, len(cols))
 		for i, col := range cols {
 			vals[i] = resolveField(item, col)
 		}
-		if _, err := fmt.Fprintln(tw, strings.Join(vals, "\t")); err != nil {
+		rows = append(rows, vals)
+	}
+
+	widths := fitColumns(cols, rows, maxWidth)
+	if err := writeRow(w, cols, widths); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := writeRow(w, row, widths); err != nil {
 			return err
 		}
 	}
-
-	return tw.Flush()
+	return nil
 }
 
 // resolveField reads a value from a map, supporting dot-paths like "severity.name".
