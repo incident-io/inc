@@ -45,6 +45,7 @@ func runRolesList(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, "id,name,shortform,role_type")
 	data, err := output.UnwrapEnvelope(resp.Body, "incident_roles")
 	if err != nil {
 		return err

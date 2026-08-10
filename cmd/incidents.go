@@ -126,7 +126,7 @@ func runIncidentsList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return paginateWith(cmd, "incidents", func(after *string) ([]byte, int, error) {
+	return paginate(cmd, "incidents", func(after *string) ([]byte, int, error) {
 		params.After = after
 		resp, err := c.IncidentsV2ListWithResponse(ctx, params, addFilters)
 		if err != nil {

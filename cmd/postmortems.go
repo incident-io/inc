@@ -71,7 +71,7 @@ func runPostmortemsList(cmd *cobra.Command, args []string) error {
 			return nil, 0, err
 		}
 		return resp.Body, resp.StatusCode(), nil
-	})
+	}, PaginateOpts{DefaultFields: "id,title,status,incident_id,created_at"})
 }
 
 func runPostmortemsShow(cmd *cobra.Command, args []string) error {

@@ -45,6 +45,7 @@ func runCustomFieldsList(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, "id,name,field_type,created_at")
 	data, err := output.UnwrapEnvelope(resp.Body, "custom_fields")
 	if err != nil {
 		return err

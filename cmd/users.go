@@ -58,7 +58,7 @@ func runUsersList(cmd *cobra.Command, args []string) error {
 			return nil, 0, err
 		}
 		return resp.Body, resp.StatusCode(), nil
-	})
+	}, PaginateOpts{DefaultFields: "id,name,email,role"})
 }
 
 func runUsersShow(cmd *cobra.Command, args []string) error {
