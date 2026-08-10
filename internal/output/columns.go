@@ -87,6 +87,11 @@ func sanitizeCell(s string) string {
 			return ' '
 		case r < 0x20 || r == 0x7f:
 			return -1
+		case r >= 0x80 && r <= 0x9f:
+			// C1 controls. U+009B is CSI, which terminals honouring 8-bit
+			// controls treat exactly like ESC [, so leaving these in would
+			// reopen the hole that stripping ESC closes.
+			return -1
 		}
 		return r
 	}, s)

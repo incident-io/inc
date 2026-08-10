@@ -157,6 +157,10 @@ func TestSanitizeCell(t *testing.T) {
 	}{
 		{"plain text untouched", "Disk usage critical", "Disk usage critical"},
 		{"escape byte stripped, leaving inert text", "safe\x1b[31mred\x1b[0m", "safe[31mred[0m"},
+		// U+009B is CSI: on terminals honouring 8-bit controls it does the job of
+		// ESC [ on its own, so stripping ESC alone would leave the hole open.
+		{"C1 CSI stripped", "safe\u009b31mred", "safe31mred"},
+		{"other C1 controls stripped", "a\u0080b\u009fc", "abc"},
 		{"newlines become spaces", "line one\nline two", "line one line two"},
 		{"tabs become spaces", "a\tb", "a b"},
 		{"wide runes survive", "日本語 🔥", "日本語 🔥"},
