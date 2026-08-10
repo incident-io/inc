@@ -55,12 +55,6 @@ func displayWidth(s string) int {
 	return len(s)
 }
 
-// isIdentifierColumn reports whether a column holds a handle for the row —
-// something you copy into the next command. Shortening one makes it useless.
-func isIdentifierColumn(col string) bool {
-	return col == "id" || col == "reference" || strings.HasSuffix(col, "_id")
-}
-
 // naturalWidths returns the width each column needs to show its widest cell in
 // full, header included.
 func naturalWidths(cols []string, rows [][]string) []int {
@@ -102,7 +96,7 @@ func fitColumns(cols []string, rows [][]string, maxWidth int) []int {
 	// id and an incident_id would lose both.
 	handle := -1
 	for i, col := range cols {
-		if isIdentifierColumn(col) {
+		if classifyColumn(col) == kindHandle {
 			handle = i
 			break
 		}
@@ -157,6 +151,12 @@ func fitColumns(cols []string, rows [][]string, maxWidth int) []int {
 func truncateCell(s string, width int) string {
 	if width <= 0 {
 		return ""
+	}
+	// ansi.Truncate does this too, but only after parsing the string; our
+	// displayWidth answers from len() for the ASCII that cells almost always
+	// are, so checking here skips the parser for every cell that already fits.
+	if displayWidth(s) <= width {
+		return s
 	}
 	tail := ""
 	if width >= minWidthForEllipsis {

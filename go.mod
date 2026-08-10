@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/charmbracelet/x/ansi v0.11.7
+	github.com/fatih/color v1.16.0
 	github.com/google/uuid v1.6.0
 	github.com/incident-io/sdk-go v1.0.21
 	github.com/itchyny/gojq v0.12.19
@@ -25,6 +26,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/oapi-codegen/runtime v1.4.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
