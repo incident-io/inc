@@ -48,20 +48,25 @@ func RawBody(body []byte) json.RawMessage {
 
 // PrintError writes an error in the appropriate format.
 // JSON format goes to the writer (usually stderr), plain text goes to the writer directly.
+//
+// The text form sanitizes as it goes: these strings come from API responses, so
+// like table cells they can carry escape sequences that would repaint the
+// reader's terminal. JSON output needs no such treatment — encoding escapes
+// control characters back to , and sanitizing would corrupt the payload.
 func PrintError(w io.Writer, format string, payload ErrorPayload) {
 	if format == "json" {
 		out, _ := json.Marshal(payload)
 		_, _ = fmt.Fprintln(w, string(out))
 		return
 	}
-	_, _ = fmt.Fprintf(w, "Error: %s\n", payload.Message)
+	_, _ = fmt.Fprintf(w, "Error: %s\n", sanitizeCell(payload.Message))
 	if payload.Debug != "" {
-		_, _ = fmt.Fprintf(w, "Debug: %s\n", payload.Debug)
+		_, _ = fmt.Fprintf(w, "Debug: %s\n", sanitizeCell(payload.Debug))
 	}
 	if payload.RequestID != "" {
-		_, _ = fmt.Fprintf(w, "Request ID: %s\n", payload.RequestID)
+		_, _ = fmt.Fprintf(w, "Request ID: %s\n", sanitizeCell(payload.RequestID))
 	}
 	if payload.Suggestion != "" {
-		_, _ = fmt.Fprintf(w, "%s\n", payload.Suggestion)
+		_, _ = fmt.Fprintf(w, "%s\n", sanitizeCell(payload.Suggestion))
 	}
 }

@@ -288,7 +288,7 @@ func TestPrintTableWidth_NeverOverflows(t *testing.T) {
 		width := 1 + r.Intn(120)
 
 		var buf bytes.Buffer
-		if err := printTableWidth(&buf, strings.Join(cols, ","), json.RawMessage(data), width); err != nil {
+		if err := printTableStyled(&buf, strings.Join(cols, ","), json.RawMessage(data), width, false); err != nil {
 			t.Fatalf("cols=%v width=%d: %v", cols, width, err)
 		}
 		for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
@@ -312,7 +312,7 @@ func TestPrintTableWidth_FitsTheTerminal(t *testing.T) {
 
 	for _, width := range []int{20, 40, 60, 80, 120} {
 		var buf bytes.Buffer
-		if err := printTableWidth(&buf, "id,title,status", data, width); err != nil {
+		if err := printTableStyled(&buf, "id,title,status", data, width, false); err != nil {
 			t.Fatal(err)
 		}
 		for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
@@ -329,7 +329,7 @@ func TestPrintTableWidth_UnconstrainedKeepsWholeValues(t *testing.T) {
 	data := json.RawMessage(`[{"title":"` + title + `"}]`)
 
 	var buf bytes.Buffer
-	if err := printTableWidth(&buf, "title", data, 0); err != nil {
+	if err := printTableStyled(&buf, "title", data, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), title) {
@@ -346,7 +346,7 @@ func TestPrintTableWidth_ColumnsStayAligned(t *testing.T) {
 	]`)
 
 	var buf bytes.Buffer
-	if err := printTableWidth(&buf, "name,status", data, 40); err != nil {
+	if err := printTableStyled(&buf, "name,status", data, 40, false); err != nil {
 		t.Fatal(err)
 	}
 	// The final column must begin at the same cell on every row. Under

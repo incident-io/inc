@@ -74,27 +74,30 @@ func printJSON(w io.Writer, jqExpr, fields string, data json.RawMessage) error {
 }
 
 func printTable(w io.Writer, fields string, data json.RawMessage) error {
-	// Only a terminal has a width worth fitting to. Piped table output stays
-	// complete, so anything parsing it sees whole values.
+	// Only a terminal has a width worth fitting to, so piped table output stays
+	// complete and anything parsing it sees whole values. Colour is a separate
+	// decision, not the same one: it consults the terminal too, but CLICOLOR_FORCE
+	// deliberately overrides that, so the two can't share a single check.
 	maxWidth := 0
 	if IsTTY() {
 		maxWidth = terminalWidth()
 	}
-	return printTableWidth(w, fields, data, maxWidth)
+	return printTableStyled(w, fields, data, maxWidth, colorEnabled())
 }
 
-// printTableWidth renders a table constrained to maxWidth, where zero or less
-// means unconstrained. Split out from printTable so tests can drive real widths
-// through the renderer without owning a terminal.
-func printTableWidth(w io.Writer, fields string, data json.RawMessage, maxWidth int) error {
+// printTableStyled renders a table constrained to maxWidth, where zero or less
+// means unconstrained, optionally colouring cells. Split out from printTable so
+// tests can drive real widths and styling without owning a terminal.
+func printTableStyled(w io.Writer, fields string, data json.RawMessage, maxWidth int, styled bool) error {
 	// Try to parse as an array of objects
 	var items []map[string]any
 	if err := json.Unmarshal(data, &items); err != nil {
 		// Not an array — try single object
 		var obj map[string]any
 		if err := json.Unmarshal(data, &obj); err != nil {
-			// Fall back to raw JSON
-			_, e := fmt.Fprintln(w, string(data))
+			// Fall back to raw JSON. Sanitized like any other cell: a
+			// non-conforming body could carry live escape sequences.
+			_, e := fmt.Fprintln(w, sanitizeCell(string(data)))
 			return e
 		}
 		items = []map[string]any{obj}
@@ -122,13 +125,30 @@ func printTableWidth(w io.Writer, fields string, data json.RawMessage, maxWidth 
 	for _, item := range items {
 		vals := make([]string, len(cols))
 		for i, col := range cols {
-			vals[i] = resolveField(item, col)
+			// Sanitize before styling: values are user-controlled, so escapes
+			// they carry must go before we add our own.
+			vals[i] = sanitizeCell(resolveField(item, col))
+			if styled {
+				vals[i] = paintCell(item, col, vals[i])
+			}
 		}
 		rows = append(rows, vals)
 	}
 
+	header := make([]string, len(cols))
+	for i, col := range cols {
+		header[i] = col
+		if styled {
+			header[i] = styleHeader.Sprint(col)
+		}
+	}
+
+	// Widths measure display width, so escapes don't change the layout and
+	// truncation cuts around them. They do cost displayWidth's ASCII fast path,
+	// which is affordable because colour is TTY-only, where the auto-limit keeps
+	// tables small.
 	widths := fitColumns(cols, rows, maxWidth)
-	if err := writeRow(w, cols, widths); err != nil {
+	if err := writeRow(w, header, widths); err != nil {
 		return err
 	}
 	for _, row := range rows {
