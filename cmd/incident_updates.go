@@ -19,7 +19,7 @@ var incidentUpdatesListCmd = &cobra.Command{
 }
 
 func init() {
-	incidentUpdatesListCmd.Flags().String("incident-id", "", "Filter by incident ID")
+	incidentUpdatesListCmd.Flags().String("incident-id", "", "Filter by incident ID (ULID, not an INC- reference)")
 
 	incidentUpdatesCmd.AddCommand(incidentUpdatesListCmd)
 	rootCmd.AddCommand(incidentUpdatesCmd)

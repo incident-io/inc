@@ -39,7 +39,7 @@ var postmortemsContentCmd = &cobra.Command{
 }
 
 func init() {
-	postmortemsListCmd.Flags().String("incident-id", "", "Filter by incident ID")
+	postmortemsListCmd.Flags().String("incident-id", "", "Filter by incident ID (ULID, not an INC- reference)")
 
 	postmortemsCmd.AddCommand(postmortemsListCmd)
 	postmortemsCmd.AddCommand(postmortemsShowCmd)

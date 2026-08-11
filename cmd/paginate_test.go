@@ -83,3 +83,64 @@ func TestParseFields_MalformedSkipped(t *testing.T) {
 		t.Errorf("expected 0 body fields, got %d", len(body))
 	}
 }
+
+func TestResolveLimit(t *testing.T) {
+	tests := []struct {
+		name            string
+		limit           int
+		explicit        bool
+		isTTY           bool
+		want            int
+		wantAutoLimited bool
+	}{
+		// The bug this exists to prevent: 0 is the documented way to ask for
+		// everything, so passing it must not be read as "flag absent".
+		{"explicit 0 on a terminal means everything", 0, true, true, 0, false},
+		{"absent flag on a terminal gets our cap", 0, false, true, ttyDefaultLimit, true},
+		{"explicit limit on a terminal is honoured", 5, true, true, 5, false},
+		{"piped output is never capped", 0, false, false, 0, false},
+		{"explicit limit when piped is honoured", 5, true, false, 5, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, autoLimited := resolveLimit(tt.limit, tt.explicit, tt.isTTY)
+			if got != tt.want || autoLimited != tt.wantAutoLimited {
+				t.Errorf("resolveLimit(%d, %v, %v) = (%d, %v), want (%d, %v)",
+					tt.limit, tt.explicit, tt.isTTY, got, autoLimited, tt.want, tt.wantAutoLimited)
+			}
+		})
+	}
+}
+
+func TestMoreResultsFollow(t *testing.T) {
+	withCursor := []byte(`{"pagination_meta":{"after":"cursor-1"}}`)
+	lastPage := []byte(`{"pagination_meta":{"page_size":25}}`)
+
+	tests := []struct {
+		name      string
+		collected int
+		limit     int
+		body      []byte
+		want      bool
+	}{
+		// The bug this exists to prevent: asking for exactly as many results as the
+		// org has claimed there were more, so the notice told you to pass --limit 0
+		// to see nothing extra.
+		{"exact fit on the last page", 25, 25, lastPage, false},
+		{"exact fit with another page to come", 25, 25, withCursor, true},
+		{"rows dropped from the last page", 30, 25, lastPage, true},
+		{"rows dropped and another page to come", 30, 25, withCursor, true},
+		// An unreadable envelope can't promise more.
+		{"unparseable body", 25, 25, []byte("not json"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := moreResultsFollow(tt.collected, tt.limit, tt.body); got != tt.want {
+				t.Errorf("moreResultsFollow(%d, %d, %s) = %v, want %v",
+					tt.collected, tt.limit, tt.body, got, tt.want)
+			}
+		})
+	}
+}

@@ -28,7 +28,7 @@ var followUpsShowCmd = &cobra.Command{
 }
 
 func init() {
-	followUpsListCmd.Flags().String("incident-id", "", "Filter by incident ID")
+	followUpsListCmd.Flags().String("incident-id", "", "Filter by incident ID (ULID, not an INC- reference)")
 
 	followUpsCmd.AddCommand(followUpsListCmd)
 	followUpsCmd.AddCommand(followUpsShowCmd)

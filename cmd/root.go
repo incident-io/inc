@@ -37,7 +37,7 @@ func init() {
 	rootCmd.PersistentFlags().String("api-url", "", "API base URL (overrides INCIDENT_API_URL env var, default: https://api.incident.io)")
 
 	// Pagination
-	rootCmd.PersistentFlags().Int("limit", 0, "Maximum number of results to return (0 = no limit)")
+	rootCmd.PersistentFlags().Int("limit", 0, "Maximum number of results to return on list commands (0 = no limit; unset defaults to 25 on a terminal)")
 	rootCmd.PersistentFlags().Int("page-size", 25, "Number of results per API request (max 250)")
 
 	// Debug
