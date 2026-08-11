@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/itchyny/gojq"
 	"github.com/mattn/go-isatty"
@@ -73,22 +74,35 @@ func printJSON(w io.Writer, jqExpr, fields string, data json.RawMessage) error {
 	return err
 }
 
-func printTable(w io.Writer, fields string, data json.RawMessage) error {
-	// Only a terminal has a width worth fitting to, so piped table output stays
-	// complete and anything parsing it sees whole values. Colour is a separate
-	// decision, not the same one: it consults the terminal too, but CLICOLOR_FORCE
-	// deliberately overrides that, so the two can't share a single check.
-	maxWidth := 0
-	if IsTTY() {
-		maxWidth = terminalWidth()
-	}
-	return printTableStyled(w, fields, data, maxWidth, colorEnabled())
+// tableOpts is how a table is presented. Everything here is a terminal
+// affordance: piped output takes the zero value, which keeps values whole,
+// plain and machine-readable.
+type tableOpts struct {
+	// maxWidth constrains the table; zero or less means unconstrained.
+	maxWidth int
+	// styled colours cells.
+	styled bool
+	// humanize shows timestamps as an age rather than RFC3339.
+	humanize bool
 }
 
-// printTableStyled renders a table constrained to maxWidth, where zero or less
-// means unconstrained, optionally colouring cells. Split out from printTable so
-// tests can drive real widths and styling without owning a terminal.
-func printTableStyled(w io.Writer, fields string, data json.RawMessage, maxWidth int, styled bool) error {
+func printTable(w io.Writer, fields string, data json.RawMessage) error {
+	// Width and humanized timestamps both follow the terminal, so piped output
+	// stays complete and parseable. Colour is a separate decision: it consults
+	// the terminal too, but CLICOLOR_FORCE deliberately overrides that, so the
+	// two can't share one check.
+	tty := IsTTY()
+	opts := tableOpts{styled: colorEnabled(), humanize: tty}
+	if tty {
+		opts.maxWidth = terminalWidth()
+	}
+	return printTableWith(w, fields, data, opts)
+}
+
+// printTableWith renders a table with presentation explicitly supplied. Split
+// out from printTable so tests can drive widths, styling and timestamps without
+// owning a terminal.
+func printTableWith(w io.Writer, fields string, data json.RawMessage, opts tableOpts) error {
 	// Try to parse as an array of objects
 	var items []map[string]any
 	if err := json.Unmarshal(data, &items); err != nil {
@@ -121,6 +135,7 @@ func printTableStyled(w io.Writer, fields string, data json.RawMessage, maxWidth
 		sort.Strings(cols)
 	}
 
+	now := time.Now()
 	rows := make([][]string, 0, len(items))
 	for _, item := range items {
 		vals := make([]string, len(cols))
@@ -128,7 +143,10 @@ func printTableStyled(w io.Writer, fields string, data json.RawMessage, maxWidth
 			// Sanitize before styling: values are user-controlled, so escapes
 			// they carry must go before we add our own.
 			vals[i] = sanitizeCell(resolveField(item, col))
-			if styled {
+			if opts.humanize && classifyColumn(col) == kindTimestamp {
+				vals[i] = humanizeTime(vals[i], now)
+			}
+			if opts.styled {
 				vals[i] = paintCell(item, col, vals[i])
 			}
 		}
@@ -138,7 +156,7 @@ func printTableStyled(w io.Writer, fields string, data json.RawMessage, maxWidth
 	header := make([]string, len(cols))
 	for i, col := range cols {
 		header[i] = col
-		if styled {
+		if opts.styled {
 			header[i] = styleHeader.Sprint(col)
 		}
 	}
@@ -147,7 +165,7 @@ func printTableStyled(w io.Writer, fields string, data json.RawMessage, maxWidth
 	// truncation cuts around them. They do cost displayWidth's ASCII fast path,
 	// which is affordable because colour is TTY-only, where the auto-limit keeps
 	// tables small.
-	widths := fitColumns(cols, rows, maxWidth)
+	widths := fitColumns(cols, rows, opts.maxWidth)
 	if err := writeRow(w, header, widths); err != nil {
 		return err
 	}

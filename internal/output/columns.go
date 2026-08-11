@@ -21,6 +21,9 @@ const (
 
 	// kindSeverity is a severity, coloured by its rank.
 	kindSeverity
+
+	// kindTimestamp is a moment in time, shown as an age on a terminal.
+	kindTimestamp
 )
 
 // classifyColumn infers what a column holds from its name. Names are the only
@@ -31,6 +34,14 @@ const (
 // Dot-paths classify on their root, so `severity` and `severity.name` behave
 // the same way.
 func classifyColumn(col string) columnKind {
+	// Timestamps are named for the field itself, so they key off the leaf:
+	// `created_at` and `schedule.updated_at` are both times, while the other
+	// kinds describe the object a column reads from and so key off the root.
+	// Every timestamp field the API returns ends in _at.
+	if leaf := columnLeaf(col); strings.HasSuffix(leaf, "_at") {
+		return kindTimestamp
+	}
+
 	root := columnRoot(col)
 	switch {
 	case root == "id" || root == "reference" || strings.HasSuffix(root, "_id"):
@@ -48,6 +59,14 @@ func classifyColumn(col string) columnKind {
 func columnRoot(col string) string {
 	root, _, _ := strings.Cut(col, ".")
 	return root
+}
+
+// columnLeaf returns the field a column ends at: the part after the last dot.
+func columnLeaf(col string) string {
+	if i := strings.LastIndex(col, "."); i >= 0 {
+		return col[i+1:]
+	}
+	return col
 }
 
 // siblingValue reads another field from the object a column renders, so a
