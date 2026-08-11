@@ -182,7 +182,7 @@ func TestPrintTableStyled_ColorsAndStaysInWidth(t *testing.T) {
 	]`)
 
 	var buf bytes.Buffer
-	if err := printTableStyled(&buf, "reference,incident_status,severity", data, 60, true); err != nil {
+	if err := printTableWith(&buf, "reference,incident_status,severity", data, tableOpts{maxWidth: 60, styled: true}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -210,7 +210,7 @@ func TestPrintTableStyled_UnstyledIsPlain(t *testing.T) {
 	data := json.RawMessage(`[{"status":"firing","title":"Disk full"}]`)
 
 	var buf bytes.Buffer
-	if err := printTableStyled(&buf, "status,title", data, 40, false); err != nil {
+	if err := printTableWith(&buf, "status,title", data, tableOpts{maxWidth: 40}); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(buf.String(), "\x1b[") {
@@ -224,7 +224,7 @@ func TestPrintTableStyled_TruncationKeepsColorBalanced(t *testing.T) {
 	data := json.RawMessage(`[{"incident_status":{"name":"A very long status name indeed","category":"live"}}]`)
 
 	var buf bytes.Buffer
-	if err := printTableStyled(&buf, "incident_status", data, 12, true); err != nil {
+	if err := printTableWith(&buf, "incident_status", data, tableOpts{maxWidth: 12, styled: true}); err != nil {
 		t.Fatal(err)
 	}
 	out := strings.TrimRight(buf.String(), "\n")
@@ -263,6 +263,7 @@ func TestClassifyColumn_ShippedColumnSets(t *testing.T) {
 		"id": kindHandle, "reference": kindHandle, "incident_id": kindHandle,
 		"status": kindStatus, "incident_status": kindStatus, "new_incident_status": kindStatus,
 		"severity": kindSeverity, "new_severity": kindSeverity,
+		"created_at": kindTimestamp,
 	}
 
 	for resource, fields := range sets {
