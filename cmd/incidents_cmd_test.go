@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -244,5 +246,116 @@ func TestSeveritiesList_LimitAppliesWithoutServerPagination(t *testing.T) {
 	}
 	if len(items) != 2 {
 		t.Errorf("expected --limit 2 to truncate client-side, got %d items", len(items))
+	}
+}
+
+func TestNormalizeIncidentID(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		// The forms a user has to hand.
+		{"reference as printed", "INC-84", "84"},
+		{"lowercase reference", "inc-84", "84"},
+		{"hash prefix as written in chat", "#INC-84", "84"},
+		{"surrounding whitespace", "  INC-84  ", "84"},
+		{"bare external id", "84", "84"},
+		// Anything we don't recognise goes through untouched for the API to judge.
+		{"ULID untouched", "01KZR43MHR9XPQM5MYZ5X6B26Z", "01KZR43MHR9XPQM5MYZ5X6B26Z"},
+		{"reference with trailing text is not a reference", "INC-84-typo", "INC-84-typo"},
+		{"prefix without digits", "INC-", "INC-"},
+		{"hash alone is not a reference", "#", "#"},
+		{"signed numbers are not references", "INC-+84", "INC-+84"},
+		{"empty stays empty", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeIncidentID(tt.in); got != tt.want {
+				t.Errorf("normalizeIncidentID(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIncidentsShow_AcceptsReference(t *testing.T) {
+	srv := newStubServer(t)
+	srv.respond("GET /v2/incidents/84", `{"incident":{"id":"01A","reference":"INC-84","name":"one"}}`)
+
+	res := runCommand(t, srv.args("incidents", "show", "INC-84")...)
+
+	if res.exit != 0 {
+		t.Fatalf("exit = %d, stderr: %s", res.exit, res.stderr)
+	}
+	if len(srv.requests) != 1 || srv.requests[0].Path != "/v2/incidents/84" {
+		t.Errorf("expected a request to /v2/incidents/84, got %+v", srv.requests)
+	}
+}
+
+func TestIncidentsCommandsTakingAnID_AcceptReference(t *testing.T) {
+	// Enumerated rather than listed, so a new incident subcommand taking <id> is
+	// covered the moment it's registered. Forgetting normalizeIncidentID is otherwise
+	// invisible: `id := args[0]` is what the other 22 arg-reading commands do.
+	//
+	// --dry-run prints the request it would send and exits 0, which is enough to prove
+	// the reference reached the path and needs no stubbed response per command.
+	srv := newStubServer(t)
+
+	for _, sub := range incidentsCmd.Commands() {
+		if !strings.Contains(sub.Use, "<id>") {
+			continue
+		}
+
+		t.Run(sub.Name(), func(t *testing.T) {
+			res := runCommand(t, srv.args("incidents", sub.Name(), "#inc-84", "--dry-run")...)
+
+			if res.exit != 0 {
+				t.Fatalf("exit = %d, stderr: %s", res.exit, res.stderr)
+			}
+			if !strings.Contains(res.stderr, "/v2/incidents/84") {
+				t.Errorf("expected the reference to resolve to /v2/incidents/84, got: %s", res.stderr)
+			}
+		})
+	}
+}
+
+func TestIncidentsList_LimitMatchingPageSizeCostsOneRequest(t *testing.T) {
+	// ttyDefaultLimit is aligned with the default --page-size so the common case (an
+	// unqualified list on a terminal) is satisfied by the first page. A cap above the
+	// page size costs a second round-trip to fetch rows that are then discarded.
+	page := func(ids ...string) string {
+		items := make([]string, 0, len(ids))
+		for _, id := range ids {
+			items = append(items, `{"id":"`+id+`"}`)
+		}
+		return `{"incidents":[` + strings.Join(items, ",") + `],"pagination_meta":{"after":"cursor-1","page_size":25}}`
+	}
+	// A full page at the default --page-size, deliberately not sized from
+	// ttyDefaultLimit: that would make the test pass for any cap.
+	const defaultPageSize = 25
+	first := make([]string, 0, defaultPageSize)
+	for i := range defaultPageSize {
+		first = append(first, fmt.Sprintf("01A%02d", i))
+	}
+
+	srv := newStubServer(t)
+	srv.respond("GET /v2/incidents", page(first...), page("01B00"))
+
+	res := runCommand(t, srv.args("incidents", "list",
+		"--limit", strconv.Itoa(ttyDefaultLimit), "--page-size", strconv.Itoa(defaultPageSize))...)
+
+	if res.exit != 0 {
+		t.Fatalf("exit = %d, stderr: %s", res.exit, res.stderr)
+	}
+	if len(srv.requests) != 1 {
+		t.Errorf("a limit equal to the page size should be satisfied by one request, got %d", len(srv.requests))
+	}
+	var items []map[string]any
+	if err := json.Unmarshal([]byte(res.stdout), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != ttyDefaultLimit {
+		t.Errorf("expected %d items, got %d", ttyDefaultLimit, len(items))
 	}
 }

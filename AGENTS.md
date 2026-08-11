@@ -26,7 +26,7 @@ Resources are plural nouns. Actions are usually verbs (exceptions: `schedules en
 
 ```bash
 inc incidents list --status-category live
-inc incidents show 01HXYZ
+inc incidents show INC-123
 inc catalog entries list --type-id 01HXYZ
 inc escalations create --title "Database latency spike" --escalation-path-id 01HXYZ
 ```
@@ -75,10 +75,10 @@ inc api GET /v2/incidents --paginate --jq '.incidents[]'
 | Command | Description |
 |---------|-------------|
 | `inc incidents list` | List incidents. Filter with `--status-category`, `--severity-id`, `--sort-by`. |
-| `inc incidents show ID` | Get a single incident by ID. |
+| `inc incidents show ID` | Get a single incident. `ID` is a ULID or a reference (`INC-123`). |
 | `inc incidents create` | Create an incident. |
-| `inc incidents update ID` | Update an incident. Use `--notify=false` for silent updates. |
-| `inc incidents close ID` | Close an incident. |
+| `inc incidents update ID` | Update an incident. Use `--notify=false` for silent updates. `ID` accepts a reference. |
+| `inc incidents close ID` | Close an incident. `ID` accepts a reference. |
 | `inc alerts list` | List alerts. |
 | `inc alerts show ID` | Get a single alert. |
 | `inc catalog types list` | List catalog types. |
@@ -124,7 +124,7 @@ inc api GET /v2/incidents --paginate --jq '.incidents[]'
 
 ## Pagination
 
-List commands auto-paginate when output is piped — they return all results across all pages. On a TTY with no `--limit`, they stop at 30 results and print a notice to stderr; pass `--limit 0` for everything.
+List commands auto-paginate when output is piped — they return all results across all pages. On a TTY with no `--limit`, they stop at 25 results (one page) and print a notice to stderr when more exist; pass `--limit 0` for everything.
 
 - `--limit N` — Stop after N total results.
 - `--page-size N` — Control batch size per API call (default 25, max 250).

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -19,6 +21,7 @@ import (
 var incidentsCmd = &cobra.Command{
 	Use:   "incidents",
 	Short: "Manage incidents",
+	Long:  "Manage incidents. Commands taking <id> also accept a reference, like INC-123.",
 }
 
 var incidentsListCmd = &cobra.Command{
@@ -31,11 +34,12 @@ var incidentsListCmd = &cobra.Command{
 }
 
 var incidentsShowCmd = &cobra.Command{
-	Use:     "show <id>",
-	Short:   "Get a single incident",
-	Example: `  inc incidents show 01HXYZ --output json --jq '{name, status: .incident_status.name}'`,
-	Args:    cobra.ExactArgs(1),
-	RunE:    runIncidentsShow,
+	Use:   "show <id>",
+	Short: "Get a single incident, by ID or reference",
+	Example: `  inc incidents show INC-123
+  inc incidents show 01HXYZ --output json --jq '{name, status: .incident_status.name}'`,
+	Args: cobra.ExactArgs(1),
+	RunE: runIncidentsShow,
 }
 
 var incidentsCreateCmd = &cobra.Command{
@@ -48,18 +52,19 @@ var incidentsCreateCmd = &cobra.Command{
 
 var incidentsUpdateCmd = &cobra.Command{
 	Use:     "update <id>",
-	Short:   "Update an incident",
-	Example: `  inc incidents update 01HXYZ --name "New name" --notify=false`,
+	Short:   "Update an incident, by ID or reference",
+	Example: `  inc incidents update INC-123 --name "New name" --notify=false`,
 	Args:    cobra.ExactArgs(1),
 	RunE:    runIncidentsUpdate,
 }
 
 var incidentsCloseCmd = &cobra.Command{
-	Use:   "close <id>",
-	Short: "Close an incident",
-	Long:  "Close an incident by setting its status to the first 'closed' category status. Use --status-id to specify an exact status.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runIncidentsClose,
+	Use:     "close <id>",
+	Short:   "Close an incident, by ID or reference",
+	Long:    "Close an incident by setting its status to the first 'closed' category status. Use --status-id to specify an exact status.",
+	Example: `  inc incidents close INC-123`,
+	Args:    cobra.ExactArgs(1),
+	RunE:    runIncidentsClose,
 }
 
 func init() {
@@ -89,6 +94,28 @@ func init() {
 	incidentsCmd.AddCommand(incidentsUpdateCmd)
 	incidentsCmd.AddCommand(incidentsCloseCmd)
 	rootCmd.AddCommand(incidentsCmd)
+}
+
+// normalizeIncidentID turns a reference the user pasted ("INC-84", "#inc-84") into the
+// bare number that an /v2/incidents/{id} path segment accepts alongside a ULID. The
+// reference is what we print in every table and the only identifier a user has to hand,
+// so `inc incidents show INC-84` has to work.
+//
+// This holds for the {id} path segment only. An incident_id query filter, as used by
+// `follow-ups list --incident-id`, requires the ULID and returns an empty list for
+// anything else, so don't reach for this there.
+//
+// Anything that isn't a plain reference passes through untouched, ULIDs included: the
+// API is the authority on what's a valid ID.
+func normalizeIncidentID(id string) string {
+	ref := strings.TrimPrefix(strings.TrimSpace(id), "#")
+	if rest, found := strings.CutPrefix(strings.ToLower(ref), "inc-"); found {
+		ref = rest
+	}
+	if _, err := strconv.ParseUint(ref, 10, 64); err != nil {
+		return id
+	}
+	return ref
 }
 
 func runIncidentsList(cmd *cobra.Command, args []string) error {
@@ -142,7 +169,7 @@ func runIncidentsShow(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	id := args[0]
+	id := normalizeIncidentID(args[0])
 	resp, err := c.IncidentsV2ShowWithResponse(cmd.Context(), id)
 	if err != nil {
 		return err
@@ -215,7 +242,7 @@ func runIncidentsUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	id := args[0]
+	id := normalizeIncidentID(args[0])
 	name, _ := cmd.Flags().GetString("name")
 	summary, _ := cmd.Flags().GetString("summary")
 	severityID, _ := cmd.Flags().GetString("severity-id")
@@ -258,7 +285,7 @@ func runIncidentsUpdate(cmd *cobra.Command, args []string) error {
 }
 
 func runIncidentsClose(cmd *cobra.Command, args []string) error {
-	id := args[0]
+	id := normalizeIncidentID(args[0])
 	statusID, _ := cmd.Flags().GetString("status-id")
 
 	// If no explicit status-id, look up the first "closed" status

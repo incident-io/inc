@@ -20,6 +20,32 @@ type PaginateOpts struct {
 	DefaultFields string
 }
 
+// ttyDefaultLimit caps an unqualified list on a terminal, so reading one doesn't
+// page through an org's entire history to fill a screen.
+//
+// It matches the default --page-size deliberately: a cap above it costs a second
+// round-trip to fetch a handful of rows that are then thrown away.
+const ttyDefaultLimit = 25
+
+// resolveLimit decides how many results to fetch, and reports whether the cap was ours
+// rather than the caller's. It keys off whether --limit was passed rather than its value,
+// because --limit 0 documents "no limit" (see the flag help in root.go) and Go's zero
+// value makes it indistinguishable from an absent flag otherwise.
+func resolveLimit(limit int, explicit, isTTY bool) (int, bool) {
+	if !explicit && isTTY {
+		return ttyDefaultLimit, true
+	}
+	return limit, false
+}
+
+// moreResultsFollow reports whether the API had results beyond the ones we kept, so the
+// truncation notice only claims there's more when there is. Both checks are load-bearing:
+// a page that fits the limit exactly drops nothing, and only the cursor can say whether it
+// was the last page.
+func moreResultsFollow(collected, limit int, body []byte) bool {
+	return collected > limit || extractAfterCursor(body) != ""
+}
+
 // paginate fetches all pages, unwraps each envelope, collects items, and prints.
 func paginate(cmd *cobra.Command, envelopeKey string, fetch PageFetcher, opts PaginateOpts) error {
 	format, jqExpr, fields := getOutputFlags(cmd)
@@ -27,12 +53,7 @@ func paginate(cmd *cobra.Command, envelopeKey string, fetch PageFetcher, opts Pa
 
 	fields = withDefaultFields(format, fields, opts.DefaultFields)
 
-	// Default to 30 results in TTY mode to avoid fetching everything
-	autoLimited := false
-	if limit == 0 && output.IsTTY() {
-		limit = 30
-		autoLimited = true
-	}
+	limit, autoLimited := resolveLimit(limit, cmd.Flags().Changed("limit"), output.IsTTY())
 
 	all := make([]json.RawMessage, 0)
 	var after *string
@@ -59,12 +80,8 @@ func paginate(cmd *cobra.Command, envelopeKey string, fetch PageFetcher, opts Pa
 		all = append(all, page...)
 
 		if limit > 0 && len(all) >= limit {
+			truncated = moreResultsFollow(len(all), limit, body)
 			all = all[:limit]
-			// Check if there would have been more results
-			cursor := extractAfterCursor(body)
-			if cursor != "" || len(page) > 0 {
-				truncated = true
-			}
 			break
 		}
 

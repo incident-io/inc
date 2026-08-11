@@ -40,8 +40,8 @@ inc auth status
 # List live incidents
 inc incidents list --status-category live
 
-# Show a single incident
-inc incidents show 01HXYZ
+# Show a single incident, by ULID or reference
+inc incidents show INC-123
 
 # JSON output with jq filtering
 inc incidents list --output json --jq '.[] | {id, name, status: .incident_status.name}'
