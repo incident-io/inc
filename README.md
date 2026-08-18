@@ -162,6 +162,10 @@ make fmt            # Format code
 make snapshot       # Test the release pipeline locally (no publishing)
 ```
 
+## Releasing
+
+Pushing a `v*` tag publishes a release. See [RELEASING.md](RELEASING.md).
+
 ## License
 
 MIT
