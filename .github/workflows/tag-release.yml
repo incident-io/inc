@@ -1,13 +1,13 @@
 name: Release on SDK bump
 
-# Bumps sdk-go to latest and, if that changed anything, releases it.
+# Schedule -> bump sdk-go -> CI passes -> release. No human step.
 #
-# This is the only automated release path. Everything else is released by hand
-# (see RELEASING.md), so a run that finds no new SDK version does nothing, even
-# if other work is sitting unreleased on master.
-#
-# It asks a question on a timer rather than reacting to an event, so a failed run
-# changes nothing and the next run retries the same work.
+# Everything is done with the bot PAT rather than GITHUB_TOKEN, and that is
+# load-bearing in two places. GITHUB_TOKEN cannot land a commit on master at all
+# (protected branch, and a PR it opens never receives status checks, so the
+# required checks can never pass). And a tag it pushes would not trigger
+# release.yml, because GitHub suppresses workflow runs from events it caused.
+# Events from a PAT do neither of those things.
 on:
   schedule:
     - cron: "0 8 * * *" # daily, 08:00 UTC
@@ -22,15 +22,16 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Holds the bot PAT. The environment's deployment branch policy has to allow
+    # master, or a scheduled run cannot read the secret.
+    environment: release
     permissions:
-      contents: write # commit the bump, push the tag
-      pull-requests: write # open and auto-merge the bump PR
-      actions: write # dispatch release.yml
       issues: write # report a failed run
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          fetch-depth: 0 # need tags for git describe
+          fetch-depth: 0 # need tags to work out the next version
+          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
@@ -49,100 +50,87 @@ jobs:
             exit 0
           fi
 
-          version="$(go list -m -f '{{.Version}}' github.com/incident-io/sdk-go)"
+          echo "version=$(go list -m -f '{{.Version}}' github.com/incident-io/sdk-go)" >> "$GITHUB_OUTPUT"
           echo "bumped=yes" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "Bumped to ${version}"
 
-      # The gate. Unit tests on their own don't prove much about an SDK bump, so
-      # this builds the binary the release would ship and runs it. A bump that
-      # compiles but breaks a command fails here, before anything is merged.
-      - name: Verify the built binary
+      # CI will run this too, on the PR. Doing it here as well means a broken bump
+      # never opens a PR, and it covers the one thing CI doesn't: running the
+      # binary a release would actually ship.
+      - name: Verify
         if: steps.bump.outputs.bumped == 'yes'
         run: |
           set -euo pipefail
+          go test ./...
           go build -o /tmp/inc .
           /tmp/inc --version
           /tmp/inc describe > /dev/null
           /tmp/inc incidents list --dry-run --api-key unused \
             --api-url https://api.incident.io > /dev/null
 
-      - id: merge
-        name: Land the bump on master
+      - id: land
+        name: Open the bump PR and let CI gate it
         if: steps.bump.outputs.bumped == 'yes'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
           set -euo pipefail
 
-          # Master is protected, so the bump can't be pushed directly. It goes
-          # through a PR that this merges itself.
-          branch="sdk-bump/${VERSION}"
+          # actions/checkout doesn't set an identity, and git refuses to commit
+          # without one.
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          branch="sdk-bump/${VERSION}"
           git switch -c "$branch"
           git commit -am "Bump github.com/incident-io/sdk-go to ${VERSION}"
           git push origin "$branch"
 
           pr="$(gh pr create --base master --head "$branch" \
             --title "Bump github.com/incident-io/sdk-go to ${VERSION}" \
-            --body "Automated bump. Released as a patch version once merged." \
+            --body "Automated. Released as a patch version once CI passes." \
             --label dependencies)"
-          echo "Opened ${pr}"
 
-          # build and lint are required checks on master, so this can't merge
-          # immediately — auto-merge lands it once they pass.
+          # build, lint and test are required on master, so this only merges if
+          # they pass. That is the CI gate.
           gh pr merge "$pr" --auto --squash
 
           for _ in $(seq 1 45); do
             state="$(gh pr view "$pr" --json state --jq .state)"
             case "$state" in
               MERGED) break ;;
-              CLOSED) echo "PR was closed without merging." >&2; exit 1 ;;
+              CLOSED) echo "PR closed without merging." >&2; exit 1 ;;
             esac
             sleep 20
           done
 
           if [[ "$(gh pr view "$pr" --json state --jq .state)" != "MERGED" ]]; then
-            echo "PR did not merge within 15 minutes." >&2
+            echo "CI did not pass, or the merge did not happen within 15 minutes." >&2
             exit 1
           fi
 
-          # Squashing creates a new commit, so the tag has to go on that rather
-          # than on anything in this checkout.
+          # Squashing makes a new commit, so the tag goes on that rather than on
+          # anything in this checkout.
           echo "sha=$(gh pr view "$pr" --json mergeCommit --jq .mergeCommit.oid)" >> "$GITHUB_OUTPUT"
 
-      - id: tag
-        name: Tag
+      - name: Tag
         if: steps.bump.outputs.bumped == 'yes'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ steps.merge.outputs.sha }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          SHA: ${{ steps.land.outputs.sha }}
         run: |
           set -euo pipefail
           last="$(git describe --tags --abbrev=0)"
 
-          # Patch, always. inc exports no API, so there's nothing to compare;
+          # Patch, always. inc exports no API, so there is nothing to compare;
           # minor and major releases are cut by hand.
           IFS=. read -r major minor patch <<< "${last#v}"
           next="v${major}.${minor}.$((patch + 1))"
 
+          # Pushed with the PAT, so this tag triggers release.yml on its own.
           gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
             -f "ref=refs/tags/${next}" -f "sha=${SHA}" > /dev/null
-          echo "next=${next}" >> "$GITHUB_OUTPUT"
           echo "Tagged ${next} at ${SHA}"
-
-      - name: Release
-        if: steps.bump.outputs.bumped == 'yes'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEXT: ${{ steps.tag.outputs.next }}
-        run: |
-          # A tag created with GITHUB_TOKEN doesn't trigger workflows, so
-          # release.yml is started explicitly. workflow_dispatch is exempt from
-          # that rule.
-          gh workflow run release.yml --ref "$NEXT"
 
       - name: Report failure
         if: failure()
