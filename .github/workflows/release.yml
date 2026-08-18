@@ -2,6 +2,9 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # tag-release.yml tags with GITHUB_TOKEN, and those tags don't trigger
+  # workflows, so it starts this one explicitly at the new tag.
+  workflow_dispatch: {}
 
 permissions:
   contents: write

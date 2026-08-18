@@ -1,0 +1,22 @@
+name: Dependabot auto-merge
+
+# Dependabot's bumps land without review. Nothing here gates them, because the
+# gate that matters runs in tag-release.yml before a release is cut: a bump that
+# breaks the build sits on master unreleased rather than shipping.
+on: pull_request
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Squash is the only merge method enabled on this repo.
+      - run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
