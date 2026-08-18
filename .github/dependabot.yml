@@ -1,13 +1,16 @@
 version: 2
 
 updates:
-  # Weekly Go dependency bumps. These are auto-merged (see
-  # dependabot-auto-merge.yml) and released by tag-release.yml, so a bump
-  # landing here ships without anyone touching it.
+  # Weekly Go dependency bumps. These open a PR and wait for a human: nothing
+  # here merges itself.
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
+    # Don't propose a version until it's been public for a week, so a bad release
+    # upstream has time to be noticed and pulled before it reaches a PR here.
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
