@@ -1,13 +1,13 @@
-name: Tag release
+name: Release on SDK bump
 
-# Cuts a release for anything sitting unreleased on master.
+# Bumps sdk-go to latest and, if that changed anything, releases it.
 #
-# This asks a question on a timer rather than reacting to an event: is there a
-# commit newer than the last tag? That makes it idempotent and self-healing — a
-# failed run changes nothing, and the next run asks the same question and
-# succeeds. An event-driven version would lose the release when the event was
-# missed or the run failed, and nobody would notice until the version looked
-# stale.
+# This is the only automated release path. Everything else is released by hand
+# (see RELEASING.md), so a run that finds no new SDK version does nothing, even
+# if other work is sitting unreleased on master.
+#
+# It asks a question on a timer rather than reacting to an event, so a failed run
+# changes nothing and the next run retries the same work.
 on:
   schedule:
     - cron: "0 8 * * *" # daily, 08:00 UTC
@@ -16,14 +16,15 @@ on:
 permissions: {}
 
 concurrency:
-  group: tag-release
+  group: release-on-sdk-bump
   cancel-in-progress: false
 
 jobs:
-  tag:
+  release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # create and push the tag
+      contents: write # commit the bump, push the tag
+      pull-requests: write # open and auto-merge the bump PR
       actions: write # dispatch release.yml
       issues: write # report a failed run
     steps:
@@ -31,65 +32,116 @@ jobs:
         with:
           fetch-depth: 0 # need tags for git describe
 
-      - id: check
-        name: Is there anything unreleased?
-        run: |
-          set -euo pipefail
-          last="$(git describe --tags --abbrev=0 2>/dev/null || true)"
-          if [[ -z "$last" ]]; then
-            echo "No tags yet; refusing to guess a first version." >&2
-            exit 1
-          fi
-          if [[ -z "$(git rev-list "${last}..HEAD")" ]]; then
-            echo "Nothing new since ${last}."
-            echo "release=no" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Patch bump. inc is a binary with no exported API, so there's nothing
-          # to compare and no reason to ever pick minor or major automatically.
-          # Cut those by hand when they matter.
-          IFS=. read -r major minor patch <<< "${last#v}"
-          echo "next=v${major}.${minor}.$((patch + 1))" >> "$GITHUB_OUTPUT"
-          echo "release=yes" >> "$GITHUB_OUTPUT"
-          echo "Releasing ${last} -> v${major}.${minor}.$((patch + 1))"
-
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-        if: steps.check.outputs.release == 'yes'
         with:
           go-version-file: 'go.mod'
 
-      - name: Gate on the built binary
-        if: steps.check.outputs.release == 'yes'
+      - id: bump
+        name: Bump sdk-go
+        run: |
+          set -euo pipefail
+          go get github.com/incident-io/sdk-go@latest
+          go mod tidy
+
+          if git diff --quiet go.mod go.sum; then
+            echo "Already on the latest sdk-go."
+            echo "bumped=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          version="$(go list -m -f '{{.Version}}' github.com/incident-io/sdk-go)"
+          echo "bumped=yes" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Bumped to ${version}"
+
+      # The gate. Unit tests on their own don't prove much about an SDK bump, so
+      # this builds the binary the release would ship and runs it. A bump that
+      # compiles but breaks a command fails here, before anything is merged.
+      - name: Verify the built binary
+        if: steps.bump.outputs.bumped == 'yes'
         run: |
           set -euo pipefail
           go build -o /tmp/inc .
           /tmp/inc --version
-          # Walks the whole command tree, so a broken command registration fails
-          # here rather than after the release is public.
           /tmp/inc describe > /dev/null
-          # Exercises client construction and URL building without sending
-          # anything.
           /tmp/inc incidents list --dry-run --api-key unused \
             --api-url https://api.incident.io > /dev/null
 
-      - name: Tag
-        if: steps.check.outputs.release == 'yes'
+      - id: merge
+        name: Land the bump on master
+        if: steps.bump.outputs.bumped == 'yes'
         env:
-          NEXT: ${{ steps.check.outputs.next }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.bump.outputs.version }}
         run: |
           set -euo pipefail
-          git tag "$NEXT"
-          git push origin "$NEXT"
+
+          # Master is protected, so the bump can't be pushed directly. It goes
+          # through a PR that this merges itself.
+          branch="sdk-bump/${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "Bump github.com/incident-io/sdk-go to ${VERSION}"
+          git push origin "$branch"
+
+          pr="$(gh pr create --base master --head "$branch" \
+            --title "Bump github.com/incident-io/sdk-go to ${VERSION}" \
+            --body "Automated bump. Released as a patch version once merged." \
+            --label dependencies)"
+          echo "Opened ${pr}"
+
+          # build and lint are required checks on master, so this can't merge
+          # immediately — auto-merge lands it once they pass.
+          gh pr merge "$pr" --auto --squash
+
+          for _ in $(seq 1 45); do
+            state="$(gh pr view "$pr" --json state --jq .state)"
+            case "$state" in
+              MERGED) break ;;
+              CLOSED) echo "PR was closed without merging." >&2; exit 1 ;;
+            esac
+            sleep 20
+          done
+
+          if [[ "$(gh pr view "$pr" --json state --jq .state)" != "MERGED" ]]; then
+            echo "PR did not merge within 15 minutes." >&2
+            exit 1
+          fi
+
+          # Squashing creates a new commit, so the tag has to go on that rather
+          # than on anything in this checkout.
+          echo "sha=$(gh pr view "$pr" --json mergeCommit --jq .mergeCommit.oid)" >> "$GITHUB_OUTPUT"
+
+      - id: tag
+        name: Tag
+        if: steps.bump.outputs.bumped == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.merge.outputs.sha }}
+        run: |
+          set -euo pipefail
+          last="$(git describe --tags --abbrev=0)"
+
+          # Patch, always. inc exports no API, so there's nothing to compare;
+          # minor and major releases are cut by hand.
+          IFS=. read -r major minor patch <<< "${last#v}"
+          next="v${major}.${minor}.$((patch + 1))"
+
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/${next}" -f "sha=${SHA}" > /dev/null
+          echo "next=${next}" >> "$GITHUB_OUTPUT"
+          echo "Tagged ${next} at ${SHA}"
 
       - name: Release
-        if: steps.check.outputs.release == 'yes'
+        if: steps.bump.outputs.bumped == 'yes'
         env:
-          NEXT: ${{ steps.check.outputs.next }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.tag.outputs.next }}
         run: |
-          # A tag pushed with GITHUB_TOKEN does not trigger workflows, so start
-          # release.yml explicitly. workflow_dispatch is exempt from that rule.
+          # A tag created with GITHUB_TOKEN doesn't trigger workflows, so
+          # release.yml is started explicitly. workflow_dispatch is exempt from
+          # that rule.
           gh workflow run release.yml --ref "$NEXT"
 
       - name: Report failure
@@ -98,10 +150,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          # Scheduled runs email only the workflow file's author, so the issue is
-          # the notification that actually reaches anyone.
+          # Scheduled runs only email the workflow file's author, so the issue is
+          # what actually reaches anyone.
           gh issue create \
-            --title "Automated release failed" \
-            --body "\`tag-release\` failed. Nothing was released, and the next scheduled run will retry the same commits.
+            --title "Automated SDK release failed" \
+            --body "Nothing was released. The next scheduled run will retry.
 
           Run: $RUN_URL"
