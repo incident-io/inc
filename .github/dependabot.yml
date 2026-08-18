@@ -1,0 +1,13 @@
+version: 2
+
+updates:
+  # Weekly Go dependency bumps. These are auto-merged (see
+  # dependabot-auto-merge.yml) and released by tag-release.yml, so a bump
+  # landing here ships without anyone touching it.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"

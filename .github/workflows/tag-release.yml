@@ -1,0 +1,107 @@
+name: Tag release
+
+# Cuts a release for anything sitting unreleased on master.
+#
+# This asks a question on a timer rather than reacting to an event: is there a
+# commit newer than the last tag? That makes it idempotent and self-healing — a
+# failed run changes nothing, and the next run asks the same question and
+# succeeds. An event-driven version would lose the release when the event was
+# missed or the run failed, and nobody would notice until the version looked
+# stale.
+on:
+  schedule:
+    - cron: "0 8 * * *" # daily, 08:00 UTC
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create and push the tag
+      actions: write # dispatch release.yml
+      issues: write # report a failed run
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0 # need tags for git describe
+
+      - id: check
+        name: Is there anything unreleased?
+        run: |
+          set -euo pipefail
+          last="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [[ -z "$last" ]]; then
+            echo "No tags yet; refusing to guess a first version." >&2
+            exit 1
+          fi
+          if [[ -z "$(git rev-list "${last}..HEAD")" ]]; then
+            echo "Nothing new since ${last}."
+            echo "release=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Patch bump. inc is a binary with no exported API, so there's nothing
+          # to compare and no reason to ever pick minor or major automatically.
+          # Cut those by hand when they matter.
+          IFS=. read -r major minor patch <<< "${last#v}"
+          echo "next=v${major}.${minor}.$((patch + 1))" >> "$GITHUB_OUTPUT"
+          echo "release=yes" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${last} -> v${major}.${minor}.$((patch + 1))"
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        if: steps.check.outputs.release == 'yes'
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Gate on the built binary
+        if: steps.check.outputs.release == 'yes'
+        run: |
+          set -euo pipefail
+          go build -o /tmp/inc .
+          /tmp/inc --version
+          # Walks the whole command tree, so a broken command registration fails
+          # here rather than after the release is public.
+          /tmp/inc describe > /dev/null
+          # Exercises client construction and URL building without sending
+          # anything.
+          /tmp/inc incidents list --dry-run --api-key unused \
+            --api-url https://api.incident.io > /dev/null
+
+      - name: Tag
+        if: steps.check.outputs.release == 'yes'
+        env:
+          NEXT: ${{ steps.check.outputs.next }}
+        run: |
+          set -euo pipefail
+          git tag "$NEXT"
+          git push origin "$NEXT"
+
+      - name: Release
+        if: steps.check.outputs.release == 'yes'
+        env:
+          NEXT: ${{ steps.check.outputs.next }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A tag pushed with GITHUB_TOKEN does not trigger workflows, so start
+          # release.yml explicitly. workflow_dispatch is exempt from that rule.
+          gh workflow run release.yml --ref "$NEXT"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Scheduled runs email only the workflow file's author, so the issue is
+          # the notification that actually reaches anyone.
+          gh issue create \
+            --title "Automated release failed" \
+            --body "\`tag-release\` failed. Nothing was released, and the next scheduled run will retry the same commits.
+
+          Run: $RUN_URL"
