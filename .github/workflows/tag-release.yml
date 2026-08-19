@@ -31,7 +31,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0 # need tags to work out the next version
-          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # No token here, and no persisted credential. The next step downloads
+          # sdk-go@latest and `go test` executes it, so nothing this job holds may
+          # be readable from the working tree: a compromised upstream would
+          # otherwise find a push-capable PAT in .git/config. The steps that need
+          # the PAT take it in their own env instead.
+          persist-credentials: false
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
@@ -84,7 +89,10 @@ jobs:
           branch="sdk-bump/${VERSION}"
           git switch -c "$branch"
           git commit -am "Bump github.com/incident-io/sdk-go to ${VERSION}"
-          git push origin "$branch"
+
+          # The checkout persisted no credential, so the token goes on this one
+          # push rather than into .git/config where test code could read it.
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" "$branch"
 
           pr="$(gh pr create --base master --head "$branch" \
             --title "Bump github.com/incident-io/sdk-go to ${VERSION}" \
