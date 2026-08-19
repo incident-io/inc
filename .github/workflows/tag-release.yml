@@ -2,12 +2,16 @@ name: Release on SDK bump
 
 # Schedule -> bump sdk-go -> CI passes -> release. No human step.
 #
-# Everything is done with the bot PAT rather than GITHUB_TOKEN, and that is
-# load-bearing in two places. GITHUB_TOKEN cannot land a commit on master at all
-# (protected branch, and a PR it opens never receives status checks, so the
-# required checks can never pass). And a tag it pushes would not trigger
-# release.yml, because GitHub suppresses workflow runs from events it caused.
-# Events from a PAT do neither of those things.
+# Split across two jobs on purpose. `go test` executes sdk-go code we downloaded
+# moments earlier and have not reviewed, so that runs in a job holding no
+# credentials at all. The job that holds the PAT never executes dependency code:
+# `go get` and `go mod tidy` only read source, they don't run it. Steps within a
+# job share a runner, so a job is the only boundary that actually contains a
+# compromised upstream.
+#
+# The PAT rather than GITHUB_TOKEN, because GITHUB_TOKEN cannot land a commit on
+# master (a PR it opens never receives status checks, so the required checks can
+# never pass) and a tag it pushes would not trigger release.yml.
 on:
   schedule:
     - cron: "0 8 * * *" # daily, 08:00 UTC
@@ -20,22 +24,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  verify:
     runs-on: ubuntu-latest
-    # Holds the bot PAT. The environment's deployment branch policy has to allow
-    # master, or a scheduled run cannot read the secret.
-    environment: release
-    permissions:
-      issues: write # report a failed run
+    outputs:
+      bumped: ${{ steps.bump.outputs.bumped }}
+      version: ${{ steps.bump.outputs.version }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          fetch-depth: 0 # need tags to work out the next version
-          # No token here, and no persisted credential. The next step downloads
-          # sdk-go@latest and `go test` executes it, so nothing this job holds may
-          # be readable from the working tree: a compromised upstream would
-          # otherwise find a push-capable PAT in .git/config. The steps that need
-          # the PAT take it in their own env instead.
           persist-credentials: false
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -58,9 +54,9 @@ jobs:
           echo "version=$(go list -m -f '{{.Version}}' github.com/incident-io/sdk-go)" >> "$GITHUB_OUTPUT"
           echo "bumped=yes" >> "$GITHUB_OUTPUT"
 
-      # CI will run this too, on the PR. Doing it here as well means a broken bump
-      # never opens a PR, and it covers the one thing CI doesn't: running the
-      # binary a release would actually ship.
+      # CI runs this again on the PR. Doing it here means a broken bump never
+      # opens one, and it covers what CI doesn't: running the binary a release
+      # would ship.
       - name: Verify
         if: steps.bump.outputs.bumped == 'yes'
         run: |
@@ -72,17 +68,41 @@ jobs:
           /tmp/inc incidents list --dry-run --api-key unused \
             --api-url https://api.incident.io > /dev/null
 
+  release:
+    needs: verify
+    if: needs.verify.outputs.bumped == 'yes'
+    runs-on: ubuntu-latest
+    environment: release # holds the PAT; its branch policy must allow master
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0 # need tags to work out the next version
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Re-apply the bump
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Pinned to the exact version verify tested, not @latest, so a release
+          # published in between can't slip in untested.
+          go get "github.com/incident-io/sdk-go@${VERSION}"
+          go mod tidy
+
       - id: land
         name: Open the bump PR and let CI gate it
-        if: steps.bump.outputs.bumped == 'yes'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          VERSION: ${{ steps.bump.outputs.version }}
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
           set -euo pipefail
 
-          # actions/checkout doesn't set an identity, and git refuses to commit
-          # without one.
+          # actions/checkout doesn't set an identity, and git won't commit without
+          # one.
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -91,7 +111,7 @@ jobs:
           git commit -am "Bump github.com/incident-io/sdk-go to ${VERSION}"
 
           # The checkout persisted no credential, so the token goes on this one
-          # push rather than into .git/config where test code could read it.
+          # push rather than into .git/config.
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" "$branch"
 
           pr="$(gh pr create --base master --head "$branch" \
@@ -122,7 +142,6 @@ jobs:
           echo "sha=$(gh pr view "$pr" --json mergeCommit --jq .mergeCommit.oid)" >> "$GITHUB_OUTPUT"
 
       - name: Tag
-        if: steps.bump.outputs.bumped == 'yes'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           SHA: ${{ steps.land.outputs.sha }}
@@ -135,19 +154,24 @@ jobs:
           IFS=. read -r major minor patch <<< "${last#v}"
           next="v${major}.${minor}.$((patch + 1))"
 
-          # Pushed with the PAT, so this tag triggers release.yml on its own.
+          # Created with the PAT, so this tag triggers release.yml on its own.
           gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
             -f "ref=refs/tags/${next}" -f "sha=${SHA}" > /dev/null
           echo "Tagged ${next} at ${SHA}"
 
-      - name: Report failure
-        if: failure()
-        env:
+  report:
+    needs: [verify, release]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      # Scheduled runs only email the workflow file's author, so the issue is
+      # what actually reaches anyone.
+      - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          # Scheduled runs only email the workflow file's author, so the issue is
-          # what actually reaches anyone.
           gh issue create \
             --title "Automated SDK release failed" \
             --body "Nothing was released. The next scheduled run will retry.
