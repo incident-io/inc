@@ -33,6 +33,10 @@ clean:
 run-staging: build
 	INCIDENT_API_URL=https://api.staging.incident.io ./bin/inc $(ARGS)
 
-# Snapshot release (test goreleaser locally without publishing)
+# Snapshot release (test goreleaser locally without publishing).
+# Completions are generated here rather than by a goreleaser `before` hook, so
+# the release workflow can run them outside goreleaser's process. See
+# .goreleaser.yml.
 snapshot:
+	./scripts/completions.sh
 	goreleaser release --snapshot --clean

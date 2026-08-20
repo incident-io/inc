@@ -22,6 +22,9 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Holds the bot PAT. Its deployment branch policy allows master, which a
+    # scheduled run needs in order to read the secret at all.
+    environment: release
     permissions:
       contents: write # commit the bump, push the tag
       pull-requests: write # open and auto-merge the bump PR
@@ -71,7 +74,10 @@ jobs:
         name: Land the bump on master
         if: steps.bump.outputs.bumped == 'yes'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The PAT, not GITHUB_TOKEN. A PR opened by GITHUB_TOKEN receives no
+          # status checks, so the required checks on master would never report
+          # and auto-merge would wait until the poll below gave up.
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
           set -euo pipefail
@@ -87,12 +93,11 @@ jobs:
 
           pr="$(gh pr create --base master --head "$branch" \
             --title "Bump github.com/incident-io/sdk-go to ${VERSION}" \
-            --body "Automated bump. Released as a patch version once merged." \
-            --label dependencies)"
+            --body "Automated bump. Released as a patch version once merged.")"
           echo "Opened ${pr}"
 
-          # build and lint are required checks on master, so this can't merge
-          # immediately — auto-merge lands it once they pass.
+          # lint, build and test are required checks on master, so this can't
+          # merge immediately — auto-merge lands it once they pass.
           gh pr merge "$pr" --auto --squash
 
           for _ in $(seq 1 45); do

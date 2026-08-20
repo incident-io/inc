@@ -19,9 +19,21 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
+          # Nothing here pushes with git — goreleaser authenticates the tap push
+          # from its own env var — so don't leave a token in .git/config.
+          persist-credentials: false
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: 'go.mod'
+      # Generated here rather than by a goreleaser `before` hook. The script runs
+      # `go run .`, which executes dependency code, and a hook would run inside
+      # goreleaser's process with the tap token in its environment.
+      - run: ./scripts/completions.sh
+      # That step ran dependency code, which could have rewritten anything
+      # goreleaser is about to read — including a hook that would execute with
+      # the tap token. completions/ is gitignored, so the tracked tree must be
+      # untouched.
+      - run: git diff --exit-code
       - uses: goreleaser/goreleaser-action@e24998b8b67b290c2fa8b7c14fcfa7de2c5c9b8c # v7
         with:
           version: v2.12.7
