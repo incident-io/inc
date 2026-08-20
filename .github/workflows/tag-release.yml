@@ -100,6 +100,16 @@ jobs:
           # auto-merge needs a permission the bot doesn't have, and it would
           # outlive this job, so a timeout here would merge and release later
           # while the run had already reported failure.
+          # --watch only watches checks that already exist, and exits 1 with "no
+          # checks reported" if none have registered yet. The PR is seconds old
+          # here, so wait for them to appear first.
+          for _ in $(seq 1 18); do
+            if ! gh pr checks "$pr" 2>&1 | grep -q "no checks reported"; then
+              break
+            fi
+            sleep 10
+          done
+
           gh pr checks "$pr" --required --watch --fail-fast
 
           gh pr merge "$pr" --squash
