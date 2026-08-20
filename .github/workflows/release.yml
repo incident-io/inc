@@ -29,6 +29,11 @@ jobs:
       # `go run .`, which executes dependency code, and a hook would run inside
       # goreleaser's process with the tap token in its environment.
       - run: ./scripts/completions.sh
+      # That step ran dependency code, which could have rewritten anything
+      # goreleaser is about to read — including a hook that would execute with
+      # the tap token. completions/ is gitignored, so the tracked tree must be
+      # untouched.
+      - run: git diff --exit-code
       - uses: goreleaser/goreleaser-action@e24998b8b67b290c2fa8b7c14fcfa7de2c5c9b8c # v7
         with:
           version: v2.12.7
