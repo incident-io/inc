@@ -96,16 +96,15 @@ jobs:
             --body "Automated bump. Released as a patch version once merged.")"
           echo "Opened ${pr}"
 
-          # Wait for the required checks, then merge. Not `--auto`: enabling
-          # auto-merge needs a permission the bot doesn't have, and it would
-          # outlive this job, so a timeout here would merge and release later
-          # while the run had already reported failure.
-          # --watch only watches checks that already exist, and exits 1 with "no
-          # checks reported" if none have registered yet. The PR is seconds old
-          # here, so wait for them to appear first.
-          # No pipeline here: `gh pr checks` exits non-zero while checks are
-          # absent or pending, and under `pipefail` that exit status would
-          # propagate through a pipe and be misread as "checks have appeared".
+          # Wait for the required checks, then merge. Deliberately not
+          # `--auto`: auto-merge outlives this job, so a timeout here would
+          # merge and release later while the run had already reported failure.
+          #
+          # `--watch` only watches checks that already exist and exits 1 with
+          # "no checks reported" if none have registered yet, and the PR is
+          # seconds old at this point. No pipeline in the wait loop: gh exits
+          # non-zero while checks are absent or pending, and under `pipefail`
+          # that status would propagate through a pipe and read as success.
           for _ in $(seq 1 18); do
             out="$(gh pr checks "$pr" 2>&1 || true)"
             case "$out" in
@@ -116,11 +115,17 @@ jobs:
 
           gh pr checks "$pr" --required --watch --fail-fast
 
-          gh pr merge "$pr" --squash
+          # REST, not `gh pr merge`, which calls the GraphQL mergePullRequest
+          # mutation that a fine-grained PAT cannot use. This endpoint needs
+          # only Contents: write. The response carries the squash commit, so
+          # this also avoids a GraphQL read to find it.
+          sha="$(gh api --method PUT \
+            "repos/${GITHUB_REPOSITORY}/pulls/${pr##*/}/merge" \
+            -f merge_method=squash --jq .sha)"
 
-          # Squashing creates a new commit, so the tag has to go on that rather
-          # than on anything in this checkout.
-          echo "sha=$(gh pr view "$pr" --json mergeCommit --jq .mergeCommit.oid)" >> "$GITHUB_OUTPUT"
+          # Squashing creates a new commit, so the tag goes on that rather than
+          # on anything in this checkout.
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
       - id: tag
         name: Tag
