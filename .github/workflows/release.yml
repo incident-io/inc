@@ -31,9 +31,16 @@ jobs:
       - run: ./scripts/completions.sh
       # That step ran dependency code, which could have rewritten anything
       # goreleaser is about to read — including a hook that would execute with
-      # the tap token. completions/ is gitignored, so the tracked tree must be
-      # untouched.
-      - run: git diff --exit-code
+      # the tap token. --porcelain rather than `git diff`, because goreleaser
+      # reads .config/goreleaser.yml at higher precedence than the tracked
+      # .goreleaser.yml, and an untracked file is invisible to `git diff`.
+      # completions/ is gitignored so it doesn't show up here.
+      - run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain >&2
+            echo "working tree changed while generating completions" >&2
+            exit 1
+          fi
       - uses: goreleaser/goreleaser-action@e24998b8b67b290c2fa8b7c14fcfa7de2c5c9b8c # v7
         with:
           version: v2.12.7

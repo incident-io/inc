@@ -22,6 +22,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30 # gh pr checks --watch has no timeout of its own
     # Holds the bot PAT. Its deployment branch policy allows master, which a
     # scheduled run needs in order to read the secret at all.
     environment: release
@@ -74,10 +75,13 @@ jobs:
         name: Land the bump on master
         if: steps.bump.outputs.bumped == 'yes'
         env:
-          # The PAT, not GITHUB_TOKEN. A PR opened by GITHUB_TOKEN receives no
-          # status checks, so the required checks on master would never report
-          # and auto-merge would wait until the poll below gave up.
+          # The PAT, not GITHUB_TOKEN. Workflow runs on a PR that GITHUB_TOKEN
+          # opened are created in an approval-required state, so the required
+          # checks never report unattended. A read-only fine-grained PAT is
+          # enough to open a PR on a public repo, which is all this is for.
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # Used for the merge only, see the comment on that call.
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
           set -euo pipefail
@@ -106,20 +110,22 @@ jobs:
           # non-zero while checks are absent or pending, and under `pipefail`
           # that status would propagate through a pipe and read as success.
           for _ in $(seq 1 18); do
-            out="$(gh pr checks "$pr" 2>&1 || true)"
+            out="$(gh pr checks "$pr" --required 2>&1 || true)"
             case "$out" in
-              *"no checks reported"*) sleep 10 ;;
+              *"no checks reported"*|*"no required checks reported"*) sleep 10 ;;
               *) break ;;
             esac
           done
 
           gh pr checks "$pr" --required --watch --fail-fast
 
-          # REST, not `gh pr merge`, which calls the GraphQL mergePullRequest
-          # mutation that a fine-grained PAT cannot use. This endpoint needs
-          # only Contents: write. The response carries the squash commit, so
-          # this also avoids a GraphQL read to find it.
-          sha="$(gh api --method PUT \
+          # GITHUB_TOKEN, not the PAT. Merging needs write on the repo, and the
+          # bot account behind the PAT has read; a fine-grained token can't
+          # exceed its account's role. GITHUB_TOKEN is an installation token
+          # with contents: write and no account behind it, and merging a PR
+          # whose required checks pass is not a protection bypass. The response
+          # carries the squash commit, so this also saves a lookup.
+          sha="$(GH_TOKEN="${ACTIONS_TOKEN}" gh api --method PUT \
             "repos/${GITHUB_REPOSITORY}/pulls/${pr##*/}/merge" \
             -f merge_method=squash --jq .sha)"
 
