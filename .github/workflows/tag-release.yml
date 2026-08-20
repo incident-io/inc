@@ -96,23 +96,13 @@ jobs:
             --body "Automated bump. Released as a patch version once merged.")"
           echo "Opened ${pr}"
 
-          # lint, build and test are required checks on master, so this can't
-          # merge immediately — auto-merge lands it once they pass.
-          gh pr merge "$pr" --auto --squash
+          # Wait for the required checks, then merge. Not `--auto`: enabling
+          # auto-merge needs a permission the bot doesn't have, and it would
+          # outlive this job, so a timeout here would merge and release later
+          # while the run had already reported failure.
+          gh pr checks "$pr" --required --watch --fail-fast
 
-          for _ in $(seq 1 45); do
-            state="$(gh pr view "$pr" --json state --jq .state)"
-            case "$state" in
-              MERGED) break ;;
-              CLOSED) echo "PR was closed without merging." >&2; exit 1 ;;
-            esac
-            sleep 20
-          done
-
-          if [[ "$(gh pr view "$pr" --json state --jq .state)" != "MERGED" ]]; then
-            echo "PR did not merge within 15 minutes." >&2
-            exit 1
-          fi
+          gh pr merge "$pr" --squash
 
           # Squashing creates a new commit, so the tag has to go on that rather
           # than on anything in this checkout.
