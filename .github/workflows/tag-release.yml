@@ -103,11 +103,15 @@ jobs:
           # --watch only watches checks that already exist, and exits 1 with "no
           # checks reported" if none have registered yet. The PR is seconds old
           # here, so wait for them to appear first.
+          # No pipeline here: `gh pr checks` exits non-zero while checks are
+          # absent or pending, and under `pipefail` that exit status would
+          # propagate through a pipe and be misread as "checks have appeared".
           for _ in $(seq 1 18); do
-            if ! gh pr checks "$pr" 2>&1 | grep -q "no checks reported"; then
-              break
-            fi
-            sleep 10
+            out="$(gh pr checks "$pr" 2>&1 || true)"
+            case "$out" in
+              *"no checks reported"*) sleep 10 ;;
+              *) break ;;
+            esac
           done
 
           gh pr checks "$pr" --required --watch --fail-fast
