@@ -1,5 +1,3 @@
-# inc
-
 ![Splash image that says inc](inc.png)
 
 A command-line interface for the [incident.io](https://incident.io) API. Manages incidents, alerts, catalog entries, escalations, schedules, and more.
