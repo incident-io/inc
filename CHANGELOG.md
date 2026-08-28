@@ -3,6 +3,13 @@
 We automatically cut new releases for `sdk-go` bumps, so this changelog only
 lists out non-automated changes.
 
+## 0.4.0 - 2026-08-28
+
+- Allow configuring `app_url`
+- Support unsetting configuration options, to fall back to defaults.
+- Show single item results vertically, eg `inc incidents show <id>`
+- Introduce curated fields for single item results, setting nice defaults.
+
 ## 0.3.0 - 2026-08-28
 
 - `inc auth login` now triggers the OAuth login flow by default. When authenticated
