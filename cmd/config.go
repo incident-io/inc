@@ -48,6 +48,7 @@ func init() {
 var validKeys = map[string]bool{
 	"api_key":        true,
 	"api_url":        true,
+	"app_url":        true,
 	"default_output": true,
 }
 
@@ -123,6 +124,8 @@ func getConfigValue(cfg *config.Config, key string) string {
 		return cfg.APIKey
 	case "api_url":
 		return cfg.APIURL
+	case "app_url":
+		return cfg.AppURL
 	case "default_output":
 		return cfg.Output
 	}
@@ -135,11 +138,13 @@ func setConfigValue(cfg *config.Config, key, value string) {
 		cfg.APIKey = value
 	case "api_url":
 		cfg.APIURL = value
+	case "app_url":
+		cfg.AppURL = value
 	case "default_output":
 		cfg.Output = value
 	}
 }
 
 func validKeysList() []string {
-	return []string{"api_key", "api_url", "default_output"}
+	return []string{"api_key", "api_url", "app_url", "default_output"}
 }
