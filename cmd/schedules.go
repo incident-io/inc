@@ -104,6 +104,7 @@ func runSchedulesShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, scheduleRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "schedule")
 	if err != nil {
 		return err

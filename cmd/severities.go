@@ -69,6 +69,7 @@ func runSeveritiesShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, severityRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "severity")
 	if err != nil {
 		return err

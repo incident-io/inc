@@ -110,6 +110,7 @@ func runEscalationsShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, escalationRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "escalation")
 	if err != nil {
 		return err
@@ -147,6 +148,7 @@ func runEscalationsCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, escalationRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "escalation")
 	if err != nil {
 		return err
@@ -192,6 +194,7 @@ func runEscalationPathsShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, escalationPathRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "escalation_path")
 	if err != nil {
 		return err
