@@ -249,40 +249,28 @@ func resolveField(obj map[string]any, path string) string {
 		}
 	}
 
-	// Format the final value — avoid Go's default map printing
-	switch v := current.(type) {
+	return formatValue(columnLeaf(path), current)
+}
+
+// formatValue renders a decoded JSON value as a single cell — it avoids Go's
+// default map printing. field is the name the value was read from: array
+// elements consult it to tell a label from a value (see pairString).
+func formatValue(field string, v any) string {
+	if s, ok := scalarString(v); ok {
+		return s
+	}
+	switch v := v.(type) {
 	case nil:
 		return ""
-	case string:
-		return v
-	case float64:
-		if v == float64(int64(v)) {
-			return fmt.Sprintf("%d", int64(v))
-		}
-		return fmt.Sprintf("%g", v)
-	case bool:
-		return fmt.Sprintf("%t", v)
 	case map[string]any:
-		// Try to pick a human-readable label from the object.
-		// Most incident.io objects have a "name" field.
-		if name, ok := v["name"].(string); ok {
-			return name
+		if label, ok := objectLabel(v); ok {
+			return label
 		}
-		if email, ok := v["email"].(string); ok {
-			return email
-		}
-		if id, ok := v["id"].(string); ok {
-			return id
-		}
-		// Check for nested user object (e.g., creator.user.name)
-		if user, ok := v["user"].(map[string]any); ok {
-			if name, ok := user["name"].(string); ok {
-				return name
-			}
-		}
-		if apiKey, ok := v["api_key"].(map[string]any); ok {
-			if name, ok := apiKey["name"].(string); ok {
-				return name
+		// A single-field object is a wrapper (the API's {value: ...} shape):
+		// its content is the value.
+		if len(v) == 1 {
+			for key, inner := range v {
+				return formatValue(key, inner)
 			}
 		}
 		b, err := json.Marshal(v)
@@ -294,23 +282,152 @@ func resolveField(obj map[string]any, path string) string {
 		if len(v) == 0 {
 			return ""
 		}
-		// For arrays of objects, try to extract names
-		names := make([]string, 0, len(v))
+		// Elements join when every one of them renders to something readable —
+		// a scalar, a labelled object, or a definition/value pair. All or
+		// nothing: joining just the readable subset would misreport the data,
+		// so anything less falls back to a count.
+		parts := make([]string, 0, len(v))
 		for _, item := range v {
-			if m, ok := item.(map[string]any); ok {
-				if name, ok := m["name"].(string); ok {
-					names = append(names, name)
-					continue
-				}
+			part, ok := elementString(field, item)
+			if !ok {
+				parts = nil
+				break
 			}
+			parts = append(parts, part)
 		}
-		if len(names) > 0 {
-			return strings.Join(names, ", ")
+		if parts != nil {
+			return strings.Join(parts, ", ")
+		}
+		if len(v) == 1 {
+			return "[1 item]"
 		}
 		return fmt.Sprintf("[%d items]", len(v))
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// elementString renders one array element, reporting false for any element
+// whose rendering would lose meaning, so the array falls back to a count.
+func elementString(field string, v any) (string, bool) {
+	if s, ok := scalarString(v); ok {
+		return s, true
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	if label, ok := objectLabel(m); ok {
+		return label, true
+	}
+	if len(m) == 1 {
+		for key, inner := range m {
+			return elementString(key, inner)
+		}
+	}
+	return pairString(field, m)
+}
+
+// pairString renders the API's pervasive definition/value element: exactly two
+// fields, one an object naming what the element is, the other its value for
+// this record. A lone name-bearing object is the label; when both sides carry
+// names (a role assignment: the role and the assignee are both named), the
+// label is the side the array is named after — the API names these arrays
+// after their definition type (role → incident_role_assignments, custom_field
+// → custom_field_entries). Anything else is ambiguous and reports false.
+func pairString(field string, m map[string]any) (string, bool) {
+	if len(m) != 2 {
+		return "", false
+	}
+
+	var labeled []string
+	for key, val := range m {
+		if obj, ok := val.(map[string]any); ok {
+			if _, ok := obj["name"].(string); ok {
+				labeled = append(labeled, key)
+			}
+		}
+	}
+
+	labelKey := ""
+	switch len(labeled) {
+	case 1:
+		labelKey = labeled[0]
+	case 2:
+		for _, key := range labeled {
+			if strings.Contains(field, key) {
+				if labelKey != "" {
+					return "", false
+				}
+				labelKey = key
+			}
+		}
+		if labelKey == "" {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+
+	label, _ := m[labelKey].(map[string]any)
+	name, _ := label["name"].(string)
+	for key, val := range m {
+		if key != labelKey {
+			// An empty value (an unset custom field) is just its name — a
+			// dangling ": " would read as a value that failed to render.
+			if value := formatValue(key, val); value != "" {
+				return name + ": " + value, true
+			}
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// objectLabel picks a human-readable label from an object. Most incident.io
+// objects have a "name" field.
+func objectLabel(v map[string]any) (string, bool) {
+	if name, ok := v["name"].(string); ok {
+		return name, true
+	}
+	if email, ok := v["email"].(string); ok {
+		return email, true
+	}
+	if value, ok := v["value"].(string); ok {
+		return value, true
+	}
+	if id, ok := v["id"].(string); ok {
+		return id, true
+	}
+	// Check for nested user object (e.g., creator.user.name)
+	if user, ok := v["user"].(map[string]any); ok {
+		if name, ok := user["name"].(string); ok {
+			return name, true
+		}
+	}
+	if apiKey, ok := v["api_key"].(map[string]any); ok {
+		if name, ok := apiKey["name"].(string); ok {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// scalarString formats a JSON scalar, reporting false for anything that isn't
+// one (objects, arrays, null).
+func scalarString(v any) (string, bool) {
+	switch s := v.(type) {
+	case string:
+		return s, true
+	case float64:
+		if s == float64(int64(s)) {
+			return fmt.Sprintf("%d", int64(s)), true
+		}
+		return fmt.Sprintf("%g", s), true
+	case bool:
+		return fmt.Sprintf("%t", s), true
+	}
+	return "", false
 }
 
 func applyJQ(w io.Writer, expr string, data json.RawMessage) error {
