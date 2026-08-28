@@ -3,6 +3,13 @@
 We automatically cut new releases for `sdk-go` bumps, so this changelog only
 lists out non-automated changes.
 
+## 0.3.0 - 2026-08-28
+
+- `inc auth login` now triggers the OAuth login flow by default. When authenticated
+  as a user, all permission checks are made against the user itself instead of an
+  API key, and all actions are taken as the user.
+- Bump go version to 1.26.7
+
 ## 0.2.0 - 2026-08-18
 
 - `incidents show`, `incidents update` and `incidents close` accept a reference
