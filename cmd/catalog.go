@@ -165,6 +165,7 @@ func runCatalogTypesShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, catalogTypeRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "catalog_type")
 	if err != nil {
 		return err
@@ -195,6 +196,7 @@ func runCatalogTypesCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, catalogTypeRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "catalog_type")
 	if err != nil {
 		return err
@@ -264,6 +266,7 @@ func runCatalogEntriesShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, catalogEntryRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "catalog_entry")
 	if err != nil {
 		return err
@@ -301,6 +304,7 @@ func runCatalogEntriesCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, catalogEntryRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "catalog_entry")
 	if err != nil {
 		return err
@@ -337,6 +341,7 @@ func runCatalogEntriesUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, catalogEntryRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "catalog_entry")
 	if err != nil {
 		return err

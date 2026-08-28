@@ -80,6 +80,7 @@ func runFollowUpsShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, followUpRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "follow_up")
 	if err != nil {
 		return err

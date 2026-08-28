@@ -90,6 +90,7 @@ func runPostmortemsShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, postmortemRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "postmortem_document")
 	if err != nil {
 		return err

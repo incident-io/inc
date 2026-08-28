@@ -77,6 +77,7 @@ func runUsersShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, userRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "user")
 	if err != nil {
 		return err

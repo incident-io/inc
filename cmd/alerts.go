@@ -90,6 +90,7 @@ func runAlertsShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, alertRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "alert")
 	if err != nil {
 		return err

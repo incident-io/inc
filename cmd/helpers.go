@@ -102,6 +102,29 @@ func withDefaultFields(format, fields, defaults string) string {
 	return fields
 }
 
+// Record fields are the vertical analogue of a list's columns: the default
+// lines when a command prints a single resource (show, create, update) as a
+// table. Same policy as list columns — handle first, then name, state,
+// people, content, the useful link, and timestamps — with room for the fields
+// a reader opens a record for. Transport plumbing (Slack ids, URLs that
+// duplicate the permalink, *_ids that shadow richer fields) stays behind
+// --fields and JSON output.
+const (
+	incidentRecordFields       = "reference,name,incident_status,severity,incident_type,mode,visibility,creator,incident_role_assignments,custom_field_entries,summary,slack_channel_name,permalink,created_at,updated_at"
+	alertRecordFields          = "id,title,status,description,source_url,created_at,resolved_at,updated_at"
+	catalogTypeRecordFields    = "id,name,type_name,description,categories,estimated_count,last_synced_at,created_at,updated_at"
+	catalogEntryRecordFields   = "id,name,catalog_type_id,aliases,external_id,rank,created_at,updated_at"
+	escalationRecordFields     = "id,title,status,priority,creator,description,related_incidents,related_alerts,escalation_path_id,created_at,updated_at"
+	escalationPathRecordFields = "id,name,current_responders,team_ids"
+	scheduleRecordFields       = "id,name,timezone,current_shifts,next_shifts,team_ids,permalink,created_at,updated_at"
+	severityRecordFields       = "id,name,rank,description,created_at,updated_at"
+	customFieldRecordFields    = "id,name,field_type,description,catalog_type_id,created_at,updated_at"
+	userRecordFields           = "id,name,email,base_role,custom_roles,seats,is_active"
+	incidentRoleRecordFields   = "id,name,shortform,role_type,description,instructions,created_at,updated_at"
+	postmortemRecordFields     = "id,title,status,type,incident_id,editors,document_url,created_at,updated_at"
+	followUpRecordFields       = "id,title,status,priority,assignee,assignee_team,incident_id,labels,description,completed_at,created_at,updated_at"
+)
+
 // resolveFormat picks the output format. An explicit --output flag always
 // wins; piped output defaults to JSON for scripted usage; otherwise the
 // default_output config value applies. An empty configDefault means the

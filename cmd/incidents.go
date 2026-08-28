@@ -179,6 +179,7 @@ func runIncidentsShow(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, incidentRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "incident")
 	if err != nil {
 		return err
@@ -229,6 +230,7 @@ func runIncidentsCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, incidentRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "incident")
 	if err != nil {
 		return err
@@ -277,6 +279,7 @@ func runIncidentsUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, incidentRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "incident")
 	if err != nil {
 		return err
@@ -347,6 +350,7 @@ func runIncidentsClose(cmd *cobra.Command, args []string) error {
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
+	fields = withDefaultFields(format, fields, incidentRecordFields)
 	data, err := output.UnwrapEnvelope(resp.Body, "incident")
 	if err != nil {
 		return err
