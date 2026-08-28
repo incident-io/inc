@@ -10,6 +10,7 @@ import (
 
 const (
 	DefaultAPIURL = "https://api.incident.io"
+	DefaultAppURL = "https://app.incident.io"
 	DefaultOutput = "table"
 )
 
@@ -17,7 +18,14 @@ const (
 type Config struct {
 	APIKey string `mapstructure:"api_key"`
 	APIURL string `mapstructure:"api_url"`
+	// AppURL is the dashboard host, which serves the OAuth authorize and
+	// token-exchange endpoints (they are not on the public API host).
+	AppURL string `mapstructure:"app_url"`
 	Output string `mapstructure:"default_output"`
+	// OAuthToken is a browser-login (OAuth) access token, used when no API
+	// key is set. OAuthExpiresAt is its RFC3339 expiry.
+	OAuthToken     string `mapstructure:"oauth_token"`
+	OAuthExpiresAt string `mapstructure:"oauth_expires_at"`
 }
 
 // configDir returns the XDG-compatible config directory.
@@ -53,6 +61,22 @@ func Load() (*Config, error) {
 	return &cp, nil
 }
 
+// LoadOrDefaults is Load for writers like 'auth login' that save a fresh
+// config anyway: when the config file can't be read, it degrades to the
+// defaults instead of an error, so defaulting lives here and not in every
+// caller.
+func LoadOrDefaults() *Config {
+	cfg, err := Load()
+	if err != nil {
+		return &Config{
+			APIURL: DefaultAPIURL,
+			AppURL: DefaultAppURL,
+			Output: DefaultOutput,
+		}
+	}
+	return cfg
+}
+
 func load() (*Config, error) {
 	v := viper.New()
 	v.SetConfigFile(ConfigFilePath())
@@ -60,12 +84,14 @@ func load() (*Config, error) {
 
 	// Defaults
 	v.SetDefault("api_url", DefaultAPIURL)
+	v.SetDefault("app_url", DefaultAppURL)
 	v.SetDefault("default_output", DefaultOutput)
 
 	// Environment variable bindings
 	v.SetEnvPrefix("")
 	_ = v.BindEnv("api_key", "INCIDENT_API_KEY")
 	_ = v.BindEnv("api_url", "INCIDENT_API_URL")
+	_ = v.BindEnv("app_url", "INCIDENT_APP_URL")
 	_ = v.BindEnv("default_output", "INCIDENT_DEFAULT_OUTPUT")
 
 	// Read config file (ignore if missing)
@@ -95,7 +121,10 @@ func Save(cfg *Config) error {
 
 	v.Set("api_key", cfg.APIKey)
 	v.Set("api_url", cfg.APIURL)
+	v.Set("app_url", cfg.AppURL)
 	v.Set("default_output", cfg.Output)
+	v.Set("oauth_token", cfg.OAuthToken)
+	v.Set("oauth_expires_at", cfg.OAuthExpiresAt)
 
 	if err := v.WriteConfig(); err != nil {
 		// WriteConfig fails if the file doesn't exist yet (fresh install).
