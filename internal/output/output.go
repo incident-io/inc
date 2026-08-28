@@ -114,7 +114,10 @@ func printTableWith(w io.Writer, fields string, data json.RawMessage, opts table
 			_, e := fmt.Fprintln(w, sanitizeCell(string(data)))
 			return e
 		}
-		items = []map[string]any{obj}
+		// A single object is a record, not a one-row list: with one value per
+		// field, columns carry no information, and a show response has enough
+		// fields that a horizontal layout truncates every one of them.
+		return printRecord(w, fields, obj, opts)
 	}
 
 	if len(items) == 0 {
@@ -171,6 +174,59 @@ func printTableWith(w io.Writer, fields string, data json.RawMessage, opts table
 	}
 	for _, row := range rows {
 		if err := writeRow(w, row, widths); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// printRecord renders a single object vertically, one field per line. Fields
+// select and order the lines the way they select and order a table's columns;
+// without them, every top-level key appears, sorted.
+func printRecord(w io.Writer, fields string, obj map[string]any, opts tableOpts) error {
+	var keys []string
+	if fields != "" {
+		for _, f := range strings.Split(fields, ",") {
+			keys = append(keys, strings.TrimSpace(f))
+		}
+	} else {
+		for k := range obj {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+	}
+
+	now := time.Now()
+	labels := make([]string, len(keys))
+	values := make([]string, len(keys))
+	labelWidth, valueWidth := 0, 0
+	for i, key := range keys {
+		labelWidth = max(labelWidth, displayWidth(key))
+		val := sanitizeCell(resolveField(obj, key))
+		if opts.humanize && classifyColumn(key) == kindTimestamp {
+			val = humanizeTime(val, now)
+		}
+		if opts.styled {
+			val = paintCell(obj, key, val)
+		}
+		valueWidth = max(valueWidth, displayWidth(val))
+		labels[i], values[i] = key, val
+		if opts.styled {
+			labels[i] = styleHeader.Sprint(key)
+		}
+	}
+
+	// Labels always show in full: field names are short, and a truncated label
+	// costs more than the value width it frees. The value takes what's left of
+	// the terminal — unless that leaves it no room at all, where wrapping beats
+	// a column of ellipses (the same call fitColumns makes for narrow tables).
+	if avail := opts.maxWidth - labelWidth - len(columnGap); opts.maxWidth > 0 && avail >= minWidthForEllipsis {
+		valueWidth = min(valueWidth, avail)
+	}
+
+	widths := []int{labelWidth, valueWidth}
+	for i := range keys {
+		if err := writeRow(w, []string{labels[i], values[i]}, widths); err != nil {
 			return err
 		}
 	}

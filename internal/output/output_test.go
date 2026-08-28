@@ -217,6 +217,68 @@ func TestPrintTable_Array(t *testing.T) {
 	}
 }
 
+func TestPrintTable_SingleObjectIsVertical(t *testing.T) {
+	var buf bytes.Buffer
+	data := json.RawMessage(`{"id":"01ABC","name":"Redis latency","severity":{"name":"Minor"}}`)
+	if err := Print(&buf, "table", "", "", data); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected one line per field, got %d: %q", len(lines), lines)
+	}
+	// Keys sorted, one per line, label then value.
+	for i, want := range []string{"id", "name", "severity"} {
+		if !strings.HasPrefix(lines[i], want) {
+			t.Errorf("line %d should start with %q, got: %q", i, want, lines[i])
+		}
+	}
+	if !strings.Contains(lines[1], "Redis latency") {
+		t.Errorf("expected full value on name line, got: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "Minor") {
+		t.Errorf("expected severity label, got: %q", lines[2])
+	}
+}
+
+func TestPrintTable_SingleObjectFieldsSelectAndOrder(t *testing.T) {
+	var buf bytes.Buffer
+	data := json.RawMessage(`{"id":"01ABC","name":"Redis latency","summary":"noise"}`)
+	if err := Print(&buf, "table", "", "name,id", data); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected two lines, got %d: %q", len(lines), lines)
+	}
+	if !strings.HasPrefix(lines[0], "name") || !strings.HasPrefix(lines[1], "id") {
+		t.Errorf("expected fields order name,id, got: %q", lines)
+	}
+	if strings.Contains(buf.String(), "noise") {
+		t.Errorf("unselected field leaked into output: %q", buf.String())
+	}
+}
+
+func TestPrintRecord_TruncatesValuesNotLabels(t *testing.T) {
+	var buf bytes.Buffer
+	data := json.RawMessage(`{"incident_status":"Investigating","summary":"` + strings.Repeat("x", 100) + `"}`)
+	if err := printTableWith(&buf, "", data, tableOpts{maxWidth: 40}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	for _, line := range lines {
+		if got := displayWidth(line); got > 40 {
+			t.Errorf("line exceeds width 40 (%d): %q", got, line)
+		}
+	}
+	if !strings.HasPrefix(lines[0], "incident_status") {
+		t.Errorf("label should never truncate, got: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "…") {
+		t.Errorf("long value should carry ellipsis, got: %q", lines[1])
+	}
+}
+
 func TestPrintError_JSON(t *testing.T) {
 	var buf bytes.Buffer
 	PrintError(&buf, "json", ErrorPayload{
