@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/incident-io/inc/internal/config"
 )
@@ -88,5 +90,64 @@ func TestResolve_URLValidation(t *testing.T) {
 				t.Errorf("expected %q to be accepted, got %v", tt.url, err)
 			}
 		})
+	}
+}
+
+func TestResolve_FallsBackToOAuthToken(t *testing.T) {
+	cfg := &config.Config{
+		OAuthToken:     "oauth-token",
+		OAuthExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+	}
+	key, _, err := Resolve(cfg, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "oauth-token" {
+		t.Errorf("expected key 'oauth-token', got '%s'", key)
+	}
+}
+
+func TestResolve_APIKeyWinsOverOAuthToken(t *testing.T) {
+	cfg := &config.Config{
+		APIKey:         "from-config",
+		OAuthToken:     "oauth-token",
+		OAuthExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+	}
+	key, _, err := Resolve(cfg, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "from-config" {
+		t.Errorf("expected key 'from-config', got '%s'", key)
+	}
+}
+
+func TestResolve_ExpiredOAuthToken(t *testing.T) {
+	cfg := &config.Config{
+		OAuthToken:     "oauth-token",
+		OAuthExpiresAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
+	}
+	_, _, err := Resolve(cfg, "", "")
+	if err == nil {
+		t.Fatal("expected error for expired OAuth token")
+	}
+	if !strings.Contains(err.Error(), "inc auth login") {
+		t.Errorf("expected expiry error to point at 'inc auth login', got %v", err)
+	}
+}
+
+func TestResolve_OAuthTokenWithUnparseableExpiry(t *testing.T) {
+	// A missing or corrupt expiry must not lock the user out: the token is
+	// used as-is and the server decides whether it's still valid.
+	cfg := &config.Config{
+		OAuthToken:     "oauth-token",
+		OAuthExpiresAt: "not-a-timestamp",
+	}
+	key, _, err := Resolve(cfg, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "oauth-token" {
+		t.Errorf("expected key 'oauth-token', got '%s'", key)
 	}
 }
