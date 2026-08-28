@@ -60,7 +60,7 @@ func OAuthLogin(ctx context.Context, appURL, pluginVersion string, out io.Writer
 	if err != nil {
 		return nil, fmt.Errorf("failed to start local callback listener: %w", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
 
 	type callback struct {
@@ -103,7 +103,7 @@ func OAuthLogin(ctx context.Context, appURL, pluginVersion string, out io.Writer
 		deliver(callback{code: code})
 	})}
 	go func() { _ = srv.Serve(ln) }()
-	defer srv.Close()
+	defer func() { _ = srv.Close() }()
 
 	deviceName, _ := os.Hostname()
 	params := url.Values{}
@@ -123,7 +123,7 @@ func OAuthLogin(ctx context.Context, appURL, pluginVersion string, out io.Writer
 	// handles login if needed and redirects back to us with the code.
 	authorizeURL := appURL + "/auth/plugin/authorize?" + params.Encode()
 
-	fmt.Fprintf(out, "Opening your browser to log in to incident.io.\nIf it doesn't open, visit:\n\n  %s\n\n", authorizeURL)
+	_, _ = fmt.Fprintf(out, "Opening your browser to log in to incident.io.\nIf it doesn't open, visit:\n\n  %s\n\n", authorizeURL)
 	_ = openBrowser(authorizeURL) // best effort — the URL is printed above
 
 	select {
@@ -166,7 +166,7 @@ func exchangeToken(ctx context.Context, appURL, pluginVersion, code, verifier, r
 	if err != nil {
 		return nil, fmt.Errorf("token exchange failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -213,7 +213,7 @@ func randomToken(byteLen int) (string, error) {
 
 func writeCallbackPage(w http.ResponseWriter, title, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<!doctype html><html><head><title>%[1]s</title></head>
+	_, _ = fmt.Fprintf(w, `<!doctype html><html><head><title>%[1]s</title></head>
 <body style="font-family: -apple-system, sans-serif; text-align: center; padding-top: 4rem;">
 <h2>%[1]s</h2><p>%[2]s</p></body></html>`, title, message)
 }
