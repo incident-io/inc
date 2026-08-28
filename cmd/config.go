@@ -32,6 +32,14 @@ var configSetCmd = &cobra.Command{
 	RunE:    runConfigSet,
 }
 
+var configUnsetCmd = &cobra.Command{
+	Use:     "unset <key>",
+	Short:   "Unset a config value, reverting to the default",
+	Example: `  inc config unset api_url`,
+	Args:    cobra.ExactArgs(1),
+	RunE:    runConfigUnset,
+}
+
 var configListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all config values",
@@ -41,6 +49,7 @@ var configListCmd = &cobra.Command{
 func init() {
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configSetCmd)
+	configCmd.AddCommand(configUnsetCmd)
 	configCmd.AddCommand(configListCmd)
 	rootCmd.AddCommand(configCmd)
 }
@@ -48,6 +57,7 @@ func init() {
 var validKeys = map[string]bool{
 	"api_key":        true,
 	"api_url":        true,
+	"app_url":        true,
 	"default_output": true,
 }
 
@@ -99,6 +109,27 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func runConfigUnset(cmd *cobra.Command, args []string) error {
+	key := args[0]
+	if !validKeys[key] {
+		return fmt.Errorf("unknown config key %q. Valid keys: %s", key, strings.Join(validKeysList(), ", "))
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = &config.Config{}
+	}
+
+	setConfigValue(cfg, key, "")
+
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Unset %s in %s\n", key, config.ConfigFilePath())
+	return nil
+}
+
 func runConfigList(cmd *cobra.Command, args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -123,6 +154,8 @@ func getConfigValue(cfg *config.Config, key string) string {
 		return cfg.APIKey
 	case "api_url":
 		return cfg.APIURL
+	case "app_url":
+		return cfg.AppURL
 	case "default_output":
 		return cfg.Output
 	}
@@ -135,11 +168,13 @@ func setConfigValue(cfg *config.Config, key, value string) {
 		cfg.APIKey = value
 	case "api_url":
 		cfg.APIURL = value
+	case "app_url":
+		cfg.AppURL = value
 	case "default_output":
 		cfg.Output = value
 	}
 }
 
 func validKeysList() []string {
-	return []string{"api_key", "api_url", "default_output"}
+	return []string{"api_key", "api_url", "app_url", "default_output"}
 }
