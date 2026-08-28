@@ -28,15 +28,68 @@ func TestResolveField(t *testing.T) {
 		"creator": map[string]any{
 			"user": map[string]any{"name": "Alice"},
 		},
-		"labelless": map[string]any{
+		"wrapper": map[string]any{
 			"weird": "shape",
+		},
+		"opaque": map[string]any{
+			"weird": "shape",
+			"other": "thing",
 		},
 		"teams": []any{
 			map[string]any{"name": "infra"},
 			map[string]any{"name": "core"},
 		},
 		"ids":   []any{"a", "b"},
+		"ports": []any{float64(80), float64(443)},
+		"mixed": []any{"a", map[string]any{"weird": "shape", "other": "thing"}},
+		"one": []any{
+			map[string]any{"weird": "shape", "other": "thing"},
+		},
+		"several": []any{
+			map[string]any{"weird": "shape", "other": "thing"},
+			map[string]any{"weird": "shape", "other": "thing"},
+		},
 		"empty": []any{},
+		"role_assignments": []any{
+			map[string]any{
+				"role":     map[string]any{"id": "01ROLE", "name": "Lead"},
+				"assignee": map[string]any{"id": "01USER", "name": "Johanna", "email": "j@example.com"},
+			},
+			map[string]any{
+				"role":     map[string]any{"id": "01ROLE2", "name": "Reporter"},
+				"assignee": map[string]any{"id": "01USER2", "name": "Kate", "email": "k@example.com"},
+			},
+		},
+		"timestamp_values": []any{
+			map[string]any{
+				"incident_timestamp": map[string]any{"id": "01TS", "name": "Reported at"},
+				"value":              map[string]any{"value": "2026-08-11T10:00:00Z"},
+			},
+		},
+		"duration_metrics": []any{
+			map[string]any{
+				"duration_metric": map[string]any{"id": "01DM", "name": "Time to resolve"},
+				"value_seconds":   float64(5400),
+			},
+		},
+		"custom_field_entries": []any{
+			map[string]any{
+				"custom_field": map[string]any{"id": "01CF", "name": "Affected teams"},
+				"values": []any{
+					map[string]any{"value_catalog_entry": map[string]any{"id": "01CAT", "name": "Payments"}},
+				},
+			},
+			map[string]any{
+				"custom_field": map[string]any{"id": "01CF2", "name": "Slack Users"},
+				"values":       []any{},
+			},
+		},
+		"ambiguous_pairs": []any{
+			map[string]any{
+				"alpha": map[string]any{"name": "A"},
+				"beta":  map[string]any{"name": "B"},
+			},
+		},
 	}
 
 	tests := []struct {
@@ -50,15 +103,25 @@ func TestResolveField(t *testing.T) {
 		{"gone", ""},
 		{"missing", ""},
 		{"severity.name", "Major"},
-		{"severity", "Major"},              // object with a name: use it
-		{"owner", "a@example.com"},         // fall back to email
-		{"ref", "01REF"},                   // fall back to id
-		{"creator", "Alice"},               // nested user.name
-		{"labelless", `{"weird":"shape"}`}, // no label: JSON
-		{"teams", "infra, core"},           // array of named objects
-		{"ids", "[2 items]"},               // array without names
+		{"severity", "Major"},      // object with a name: use it
+		{"owner", "a@example.com"}, // fall back to email
+		{"ref", "01REF"},           // fall back to id
+		{"creator", "Alice"},       // nested user.name
+		{"wrapper", "shape"},       // single-field object: unwrap
+		{"opaque", `{"other":"thing","weird":"shape"}`}, // no label, no wrapper: JSON
+		{"teams", "infra, core"},                        // array of named objects
+		{"ids", "a, b"},                                 // array of scalars: join values
+		{"ports", "80, 443"},                            // numbers too
+		{"mixed", "[2 items]"},                          // joining is all-or-nothing
+		{"one", "[1 item]"},                             // unlabeled objects: count, singular
+		{"several", "[2 items]"},                        // unlabeled objects: count
 		{"empty", ""},
-		{"name.deeper", ""}, // dot-path into a non-object
+		{"role_assignments", "Lead: Johanna, Reporter: Kate"},             // both sides named: array is named after the label
+		{"timestamp_values", "Reported at: 2026-08-11T10:00:00Z"},         // lone named side is the label, value unwrapped
+		{"duration_metrics", "Time to resolve: 5400"},                     // scalar value side
+		{"custom_field_entries", "Affected teams: Payments, Slack Users"}, // wrapper recursion; empty value is just its name
+		{"ambiguous_pairs", "[1 item]"},                                   // both named, no tiebreak: count
+		{"name.deeper", ""},                                               // dot-path into a non-object
 	}
 
 	for _, tt := range tests {
@@ -214,6 +277,68 @@ func TestPrintTable_Array(t *testing.T) {
 	}
 	if !strings.Contains(out, "alpha") || !strings.Contains(out, "bravo") {
 		t.Errorf("expected data rows, got: %s", out)
+	}
+}
+
+func TestPrintTable_SingleObjectIsVertical(t *testing.T) {
+	var buf bytes.Buffer
+	data := json.RawMessage(`{"id":"01ABC","name":"Redis latency","severity":{"name":"Minor"}}`)
+	if err := Print(&buf, "table", "", "", data); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected one line per field, got %d: %q", len(lines), lines)
+	}
+	// Keys sorted, one per line, label then value.
+	for i, want := range []string{"id", "name", "severity"} {
+		if !strings.HasPrefix(lines[i], want) {
+			t.Errorf("line %d should start with %q, got: %q", i, want, lines[i])
+		}
+	}
+	if !strings.Contains(lines[1], "Redis latency") {
+		t.Errorf("expected full value on name line, got: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "Minor") {
+		t.Errorf("expected severity label, got: %q", lines[2])
+	}
+}
+
+func TestPrintTable_SingleObjectFieldsSelectAndOrder(t *testing.T) {
+	var buf bytes.Buffer
+	data := json.RawMessage(`{"id":"01ABC","name":"Redis latency","summary":"noise"}`)
+	if err := Print(&buf, "table", "", "name,id", data); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected two lines, got %d: %q", len(lines), lines)
+	}
+	if !strings.HasPrefix(lines[0], "name") || !strings.HasPrefix(lines[1], "id") {
+		t.Errorf("expected fields order name,id, got: %q", lines)
+	}
+	if strings.Contains(buf.String(), "noise") {
+		t.Errorf("unselected field leaked into output: %q", buf.String())
+	}
+}
+
+func TestPrintRecord_TruncatesValuesNotLabels(t *testing.T) {
+	var buf bytes.Buffer
+	data := json.RawMessage(`{"incident_status":"Investigating","summary":"` + strings.Repeat("x", 100) + `"}`)
+	if err := printTableWith(&buf, "", data, tableOpts{maxWidth: 40}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	for _, line := range lines {
+		if got := displayWidth(line); got > 40 {
+			t.Errorf("line exceeds width 40 (%d): %q", got, line)
+		}
+	}
+	if !strings.HasPrefix(lines[0], "incident_status") {
+		t.Errorf("label should never truncate, got: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "…") {
+		t.Errorf("long value should carry ellipsis, got: %q", lines[1])
 	}
 }
 
