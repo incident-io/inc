@@ -118,6 +118,7 @@ inc api GET /v2/incidents --paginate --jq '.incidents[]'
 | `inc auth token` | Print the current API key to stdout. |
 | `inc config set KEY VALUE` | Set a config value. |
 | `inc config get KEY` | Get a config value. |
+| `inc config unset KEY` | Unset a config value, reverting to the default. |
 | `inc config list` | List all config values. |
 | `inc describe` | Output JSON schema of all commands and flags for agent discovery. |
 | `inc api METHOD PATH` | Hit any API endpoint directly. |

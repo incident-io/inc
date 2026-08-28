@@ -101,6 +101,18 @@ func load() (*Config, error) {
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, err
 	}
+
+	// An empty value in the file means unset: fall back to the default so
+	// callers never see "".
+	if cfg.APIURL == "" {
+		cfg.APIURL = DefaultAPIURL
+	}
+	if cfg.AppURL == "" {
+		cfg.AppURL = DefaultAppURL
+	}
+	if cfg.Output == "" {
+		cfg.Output = DefaultOutput
+	}
 	return cfg, nil
 }
 
@@ -119,12 +131,20 @@ func Save(cfg *Config) error {
 	v.SetConfigType("yaml")
 	v.SetConfigPermissions(0o600)
 
-	v.Set("api_key", cfg.APIKey)
-	v.Set("api_url", cfg.APIURL)
-	v.Set("app_url", cfg.AppURL)
-	v.Set("default_output", cfg.Output)
-	v.Set("oauth_token", cfg.OAuthToken)
-	v.Set("oauth_expires_at", cfg.OAuthExpiresAt)
+	// Empty values are omitted entirely, so an unset key disappears from the
+	// file and the default applies on the next load.
+	for key, value := range map[string]string{
+		"api_key":          cfg.APIKey,
+		"api_url":          cfg.APIURL,
+		"app_url":          cfg.AppURL,
+		"default_output":   cfg.Output,
+		"oauth_token":      cfg.OAuthToken,
+		"oauth_expires_at": cfg.OAuthExpiresAt,
+	} {
+		if value != "" {
+			v.Set(key, value)
+		}
+	}
 
 	if err := v.WriteConfig(); err != nil {
 		// WriteConfig fails if the file doesn't exist yet (fresh install).

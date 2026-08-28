@@ -32,6 +32,14 @@ var configSetCmd = &cobra.Command{
 	RunE:    runConfigSet,
 }
 
+var configUnsetCmd = &cobra.Command{
+	Use:     "unset <key>",
+	Short:   "Unset a config value, reverting to the default",
+	Example: `  inc config unset api_url`,
+	Args:    cobra.ExactArgs(1),
+	RunE:    runConfigUnset,
+}
+
 var configListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all config values",
@@ -41,6 +49,7 @@ var configListCmd = &cobra.Command{
 func init() {
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configSetCmd)
+	configCmd.AddCommand(configUnsetCmd)
 	configCmd.AddCommand(configListCmd)
 	rootCmd.AddCommand(configCmd)
 }
@@ -97,6 +106,27 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "Set %s in %s\n", key, config.ConfigFilePath())
+	return nil
+}
+
+func runConfigUnset(cmd *cobra.Command, args []string) error {
+	key := args[0]
+	if !validKeys[key] {
+		return fmt.Errorf("unknown config key %q. Valid keys: %s", key, strings.Join(validKeysList(), ", "))
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = &config.Config{}
+	}
+
+	setConfigValue(cfg, key, "")
+
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Unset %s in %s\n", key, config.ConfigFilePath())
 	return nil
 }
 
