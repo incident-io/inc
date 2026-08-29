@@ -30,8 +30,8 @@ github.com/hashicorp/go-hclog v1.6.3 h1:Qr2kF+eVWjTiYmU7Y31tYlP1h0q/X3Nl3tPGdaB1
 github.com/hashicorp/go-hclog v1.6.3/go.mod h1:W4Qnvbt70Wk/zYJryRzDRU/4r0kIg0PVHBcfoyhpF5M=
 github.com/hashicorp/go-retryablehttp v0.7.8 h1:ylXZWnqa7Lhqpk0L1P1LzDtGcCR0rPVUrx/c8Unxc48=
 github.com/hashicorp/go-retryablehttp v0.7.8/go.mod h1:rjiScheydd+CxvumBsIrFKlx3iS0jrZ7LvzFGFmuKbw=
-github.com/incident-io/sdk-go v1.0.77 h1:2Be3SPTssJZWbHWVg74toyj1BIzEjLYrrGgvVjAWnks=
-github.com/incident-io/sdk-go v1.0.77/go.mod h1:Hlmdnl3Rk6k24R2TcJUyO/xZYtoSbc74afTZxTlu2nU=
+github.com/incident-io/sdk-go v1.0.79 h1:v/6G8QpV9Yc/bgiNECfBwaKpNBJJx97MPw7eDeGAhc8=
+github.com/incident-io/sdk-go v1.0.79/go.mod h1:Hlmdnl3Rk6k24R2TcJUyO/xZYtoSbc74afTZxTlu2nU=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/itchyny/gojq v0.12.19 h1:ttXA0XCLEMoaLOz5lSeFOZ6u6Q3QxmG46vfgI4O0DEs=
