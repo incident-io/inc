@@ -41,27 +41,26 @@ func runFollowUpsList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	ctx := cmd.Context()
+	pageSize, _ := cmd.Flags().GetInt("page-size")
 	incidentID, _ := cmd.Flags().GetString("incident-id")
-	params := &incident.FollowUpsV2ListParams{}
+
+	params := &incident.FollowUpsV3ListParams{}
+	ps := int64(pageSize)
+	params.PageSize = &ps
+
 	if incidentID != "" {
 		params.IncidentId = &incidentID
 	}
 
-	resp, err := c.FollowUpsV2ListWithResponse(cmd.Context(), params)
-	if err != nil {
-		return err
-	}
-	if err := handleAPIResponse(resp.StatusCode(), resp.Body); err != nil {
-		return err
-	}
-
-	format, jqExpr, fields := getOutputFlags(cmd)
-	fields = withDefaultFields(format, fields, "id,title,status,assignee,priority")
-	data, err := output.UnwrapEnvelope(resp.Body, "follow_ups")
-	if err != nil {
-		return err
-	}
-	return printOutput(cmd, format, jqExpr, fields, data)
+	return paginate(cmd, "follow_ups", func(after *string) ([]byte, int, error) {
+		params.After = after
+		resp, err := c.FollowUpsV3ListWithResponse(ctx, params)
+		if err != nil {
+			return nil, 0, err
+		}
+		return resp.Body, resp.StatusCode(), nil
+	}, PaginateOpts{DefaultFields: "id,title,status,assignee,priority"})
 }
 
 func runFollowUpsShow(cmd *cobra.Command, args []string) error {
@@ -71,7 +70,7 @@ func runFollowUpsShow(cmd *cobra.Command, args []string) error {
 	}
 
 	id := args[0]
-	resp, err := c.FollowUpsV2ShowWithResponse(cmd.Context(), id)
+	resp, err := c.FollowUpsV3ShowWithResponse(cmd.Context(), id)
 	if err != nil {
 		return err
 	}
