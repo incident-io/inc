@@ -6,7 +6,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/fatih/color v1.19.0
 	github.com/google/uuid v1.6.0
-	github.com/incident-io/sdk-go v1.0.84
+	github.com/incident-io/sdk-go v1.0.88
 	github.com/itchyny/gojq v0.12.19
 	github.com/mattn/go-isatty v0.0.24
 	github.com/spf13/cobra v1.10.2
