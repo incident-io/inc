@@ -1,6 +1,6 @@
 module github.com/incident-io/inc
 
-go 1.26.7
+go 1.27.3
 
 require (
 	github.com/charmbracelet/x/ansi v0.11.8
