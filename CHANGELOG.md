@@ -3,6 +3,11 @@
 We automatically cut new releases for `sdk-go` bumps, so this changelog only
 lists out non-automated changes.
 
+## 0.5.0 - 2026-10-20
+
+- Bump go version to 1.27.3
+- Remove deprecated backend for mise - thanks @deiga
+
 ## 0.4.0 - 2026-08-28
 
 - Allow configuring `app_url`
