@@ -469,8 +469,10 @@ func filterFields(data json.RawMessage, fields []string) (json.RawMessage, error
 		fieldSet[strings.TrimSpace(f)] = true
 	}
 
+	// Keep values as raw JSON so selecting fields does not round numbers or
+	// reject valid numbers outside the float64 range.
 	// Try array
-	var items []map[string]any
+	var items []map[string]json.RawMessage
 	if json.Unmarshal(data, &items) == nil {
 		for i, item := range items {
 			items[i] = pickFields(item, fieldSet)
@@ -479,7 +481,7 @@ func filterFields(data json.RawMessage, fields []string) (json.RawMessage, error
 	}
 
 	// Try single object
-	var obj map[string]any
+	var obj map[string]json.RawMessage
 	if json.Unmarshal(data, &obj) == nil {
 		return json.Marshal(pickFields(obj, fieldSet))
 	}
@@ -487,8 +489,8 @@ func filterFields(data json.RawMessage, fields []string) (json.RawMessage, error
 	return data, nil
 }
 
-func pickFields(obj map[string]any, fields map[string]bool) map[string]any {
-	result := make(map[string]any, len(fields))
+func pickFields(obj map[string]json.RawMessage, fields map[string]bool) map[string]json.RawMessage {
+	result := make(map[string]json.RawMessage, len(fields))
 	for k, v := range obj {
 		if fields[k] {
 			result[k] = v
