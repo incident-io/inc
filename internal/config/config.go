@@ -61,10 +61,9 @@ func Load() (*Config, error) {
 	return &cp, nil
 }
 
-// LoadOrDefaults is Load for writers like 'auth login' that save a fresh
-// config anyway: when the config file can't be read, it degrades to the
-// defaults instead of an error, so defaulting lives here and not in every
-// caller.
+// LoadOrDefaults is Load that degrades to the defaults instead of an error
+// when the config file can't be read. Don't save what it returns: it includes
+// environment variables and defaults. Writers start from LoadFile.
 func LoadOrDefaults() *Config {
 	cfg, err := Load()
 	if err != nil {
@@ -112,6 +111,25 @@ func load() (*Config, error) {
 	}
 	if cfg.Output == "" {
 		cfg.Output = DefaultOutput
+	}
+	return cfg, nil
+}
+
+// LoadFile reads the config file alone, with no environment variables and no
+// defaults, and without the Load cache. A caller that reads, changes and saves
+// the file uses it, so values from the environment aren't written into the
+// file and changes made by another process since Load aren't lost.
+func LoadFile() (*Config, error) {
+	v := viper.New()
+	v.SetConfigFile(ConfigFilePath())
+	v.SetConfigType("yaml")
+
+	// Read config file (ignore if missing)
+	_ = v.ReadInConfig()
+
+	cfg := &Config{}
+	if err := v.Unmarshal(cfg); err != nil {
+		return nil, err
 	}
 	return cfg, nil
 }
