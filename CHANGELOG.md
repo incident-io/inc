@@ -3,6 +3,14 @@
 We automatically cut new releases for `sdk-go` bumps, so this changelog only
 lists out non-automated changes.
 
+## 0.6.0 - 2026-11-16
+
+- `inc auth login` uses a client ID metadata document (CIMD).
+- Support OAuth refresh tokens, enabling longer lived sessions.
+- `inc auth login` and `inc config set|unset` no longer save environment variables
+  to the config file.
+- Bump go version to 1.27.4
+
 ## 0.5.0 - 2026-10-20
 
 - Bump go version to 1.27.3
