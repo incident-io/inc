@@ -20,9 +20,11 @@ import (
 	"github.com/incident-io/inc/internal/api"
 )
 
-// OAuthClientID is the CLI's OAuth client, registered server-side with
-// localhost-only redirect URIs.
-const OAuthClientID = "incident-cli"
+// OAuthClientID is the CLI's OAuth client ID: the URL of its client metadata
+// document (CIMD), which lists the CLI's name and loopback redirect URI. The
+// server fetches the document to identify the client, so the same ID works
+// against every environment.
+const OAuthClientID = "https://app.incident.io/api/oauth/cli-client-metadata.json"
 
 // oauthTimeout is how long we wait for the user to finish in the browser.
 // Authorization codes expire server-side after 10 minutes anyway.
@@ -54,8 +56,9 @@ func OAuthLogin(ctx context.Context, appURL, pluginVersion string, out io.Writer
 		return nil, err
 	}
 
-	// Loopback listener on an ephemeral port. The server allows any localhost
-	// port for the incident-cli client, so no port needs reserving.
+	// Loopback listener on an ephemeral port. The server matches a loopback
+	// redirect URI from the metadata document on any port, so no port needs
+	// reserving.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("failed to start local callback listener: %w", err)
