@@ -183,6 +183,34 @@ func TestLock_IsExclusive(t *testing.T) {
 	unlockAgain()
 }
 
+func TestUpdate_WaitsForLockAndKeepsOtherValues(t *testing.T) {
+	clearEnv(t)
+	writeConfig(t, "oauth_token: kept\n")
+
+	// A refresh holding the lock must finish before Update reads the file.
+	unlock, err := Lock(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := Update(ctx, func(cfg *Config) { cfg.Output = "json" }); err == nil {
+		t.Fatal("expected Update to wait while the lock is held")
+	}
+	unlock()
+
+	if err := Update(context.Background(), func(cfg *Config) { cfg.Output = "json" }); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *cfg != (Config{OAuthToken: "kept", Output: "json"}) {
+		t.Errorf("expected the change on top of the file's values, got %+v", cfg)
+	}
+}
+
 func TestLoad_ReturnsIndependentCopies(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

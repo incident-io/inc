@@ -94,16 +94,10 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid value %q for default_output. Valid values: %s", value, strings.Join(output.Formats, ", "))
 	}
 
-	// Start from the file alone, so environment variables and defaults aren't
-	// written into it.
-	cfg, err := config.LoadFile()
+	err := config.Update(cmd.Context(), func(cfg *config.Config) {
+		setConfigValue(cfg, key, value)
+	})
 	if err != nil {
-		cfg = &config.Config{}
-	}
-
-	setConfigValue(cfg, key, value)
-
-	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -117,16 +111,10 @@ func runConfigUnset(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unknown config key %q. Valid keys: %s", key, strings.Join(validKeysList(), ", "))
 	}
 
-	// Start from the file alone, so environment variables and defaults aren't
-	// written into it.
-	cfg, err := config.LoadFile()
+	err := config.Update(cmd.Context(), func(cfg *config.Config) {
+		setConfigValue(cfg, key, "")
+	})
 	if err != nil {
-		cfg = &config.Config{}
-	}
-
-	setConfigValue(cfg, key, "")
-
-	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

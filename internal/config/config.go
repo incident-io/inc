@@ -162,6 +162,25 @@ func Lock(ctx context.Context) (unlock func(), err error) {
 	return func() { _ = lock.Unlock() }, nil
 }
 
+// Update changes the config file under Lock: it reads the file alone (see
+// LoadFile), applies change and saves. Holding the lock means a concurrent
+// OAuth refresh can't save over the change. A file that can't be parsed is
+// replaced.
+func Update(ctx context.Context, change func(cfg *Config)) error {
+	unlock, err := Lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	cfg, err := LoadFile()
+	if err != nil {
+		cfg = &Config{}
+	}
+	change(cfg)
+	return Save(cfg)
+}
+
 // Save writes the config to disk, creating the directory if needed. The file
 // holds credentials, so it is kept private (0600). It is written to a temp
 // file and renamed into place, so a reader never sees a partly written file.
