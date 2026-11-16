@@ -79,19 +79,15 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no API key provided")
 	}
 
-	// Start from the file alone, so environment variables and defaults aren't
-	// written into it.
-	cfg, err := config.LoadFile()
+	err := config.Update(cmd.Context(), func(cfg *config.Config) {
+		// Logging in replaces the stored credential: clear any OAuth token so
+		// the pasted key actually takes effect (and vice versa in the OAuth path).
+		cfg.APIKey = token
+		cfg.OAuthToken = ""
+		cfg.OAuthExpiresAt = ""
+		cfg.OAuthRefreshToken = ""
+	})
 	if err != nil {
-		cfg = &config.Config{}
-	}
-	// Logging in replaces the stored credential: clear any OAuth token so the
-	// pasted key actually takes effect (and vice versa in the OAuth path).
-	cfg.APIKey = token
-	cfg.OAuthToken = ""
-	cfg.OAuthExpiresAt = ""
-
-	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -100,31 +96,35 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 }
 
 func runAuthLoginOAuth(cmd *cobra.Command) error {
-	// The app URL honours INCIDENT_APP_URL, but what's saved starts from the
-	// file alone, so environment variables and defaults aren't written into it.
+	// The app URL honours INCIDENT_APP_URL. What's saved comes from the file
+	// alone (config.Update), so environment variables and defaults aren't
+	// written into it.
 	token, err := auth.OAuthLogin(cmd.Context(), config.LoadOrDefaults().AppURL, version, os.Stderr)
 	if err != nil {
 		return err
 	}
 
-	cfg, err := config.LoadFile()
+	err = config.Update(cmd.Context(), func(cfg *config.Config) {
+		// Logging in replaces the stored credential: clear any saved API key so
+		// the new token actually takes effect. INCIDENT_API_KEY in the
+		// environment still wins at resolution time, so warn if one is set.
+		cfg.APIKey = ""
+		cfg.OAuthToken = token.AccessToken
+		cfg.OAuthExpiresAt = token.ExpiresAt.UTC().Format(time.RFC3339)
+		cfg.OAuthRefreshToken = token.RefreshToken
+	})
 	if err != nil {
-		cfg = &config.Config{}
-	}
-
-	// Logging in replaces the stored credential: clear any saved API key so
-	// the new token actually takes effect. INCIDENT_API_KEY in the
-	// environment still wins at resolution time, so warn if one is set.
-	cfg.APIKey = ""
-	cfg.OAuthToken = token.AccessToken
-	cfg.OAuthExpiresAt = token.ExpiresAt.UTC().Format(time.RFC3339)
-
-	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Logged in. Token saved to %s (expires %s).\n",
-		config.ConfigFilePath(), token.ExpiresAt.Local().Format("2 Jan 2006"))
+	if token.RefreshToken != "" {
+		// The access token is short-lived and renews itself, so its expiry
+		// isn't what the user needs to know.
+		fmt.Fprintf(os.Stderr, "Logged in. Token saved to %s.\n", config.ConfigFilePath())
+	} else {
+		fmt.Fprintf(os.Stderr, "Logged in. Token saved to %s (expires %s).\n",
+			config.ConfigFilePath(), token.ExpiresAt.Local().Format("2 Jan 2006"))
+	}
 	if os.Getenv("INCIDENT_API_KEY") != "" {
 		fmt.Fprintln(os.Stderr, "Note: INCIDENT_API_KEY is set in your environment and takes precedence over this login.")
 	}
@@ -173,7 +173,7 @@ func runAuthToken(cmd *cobra.Command, args []string) error {
 	}
 
 	flagKey, _ := cmd.Flags().GetString("api-key")
-	apiKey, _, err := auth.Resolve(cfg, flagKey, "")
+	apiKey, _, err := auth.Resolve(cmd.Context(), cfg, flagKey, "", version)
 	if err != nil {
 		return err
 	}
