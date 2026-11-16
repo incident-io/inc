@@ -1,10 +1,14 @@
 package config
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/spf13/viper"
 )
 
@@ -23,9 +27,12 @@ type Config struct {
 	AppURL string `mapstructure:"app_url"`
 	Output string `mapstructure:"default_output"`
 	// OAuthToken is a browser-login (OAuth) access token, used when no API
-	// key is set. OAuthExpiresAt is its RFC3339 expiry.
-	OAuthToken     string `mapstructure:"oauth_token"`
-	OAuthExpiresAt string `mapstructure:"oauth_expires_at"`
+	// key is set. OAuthExpiresAt is its RFC3339 expiry. OAuthRefreshToken,
+	// when the server issued one, gets a new access token when it expires;
+	// each refresh token works once.
+	OAuthToken        string `mapstructure:"oauth_token"`
+	OAuthExpiresAt    string `mapstructure:"oauth_expires_at"`
+	OAuthRefreshToken string `mapstructure:"oauth_refresh_token"`
 }
 
 // configDir returns the XDG-compatible config directory.
@@ -43,9 +50,9 @@ func ConfigFilePath() string {
 }
 
 // loadOnce memoizes the config read: commands load config in several places
-// (client construction, output-format resolution) and the file cannot change
-// mid-invocation. Save does NOT invalidate the cache; no caller reads back
-// after saving in the same process.
+// (client construction, output-format resolution). Save does NOT invalidate
+// the cache. The one writer that reads back in the same process, the OAuth
+// refresh, reads the file with LoadFile under Lock instead.
 var loadOnce = sync.OnceValues(load)
 
 // Load returns the config from ~/.config/inc/config.yml with environment
@@ -116,42 +123,86 @@ func load() (*Config, error) {
 	return cfg, nil
 }
 
+// LoadFile reads the config file alone, with no environment variables and no
+// defaults, and without the Load cache. A caller that reads, changes and saves
+// the file uses it, so values from the environment aren't written into the
+// file and changes made by another process since Load aren't lost.
+func LoadFile() (*Config, error) {
+	v := viper.New()
+	v.SetConfigFile(ConfigFilePath())
+	v.SetConfigType("yaml")
+
+	// Read config file (ignore if missing)
+	_ = v.ReadInConfig()
+
+	cfg := &Config{}
+	if err := v.Unmarshal(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// Lock takes an exclusive lock shared by every inc process, waiting until it
+// is free or ctx is done. Hold it to read, change and save the config without
+// another process changing it in between. The returned function releases it.
+// The operating system releases the lock if the process dies.
+func Lock(ctx context.Context) (unlock func(), err error) {
+	dir := configDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+
+	lock := flock.New(filepath.Join(dir, "config.lock"), flock.SetPermissions(0o600))
+	locked, err := lock.TryLockContext(ctx, 50*time.Millisecond)
+	if err != nil {
+		return nil, fmt.Errorf("locking config: %w", err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("locking config: %w", ctx.Err())
+	}
+	return func() { _ = lock.Unlock() }, nil
+}
+
 // Save writes the config to disk, creating the directory if needed. The file
-// holds the API key, so it is kept private (0600) even if it already existed
-// with looser permissions.
+// holds credentials, so it is kept private (0600). It is written to a temp
+// file and renamed into place, so a reader never sees a partly written file.
 func Save(cfg *Config) error {
 	dir := configDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 
-	path := ConfigFilePath()
 	v := viper.New()
-	v.SetConfigFile(path)
 	v.SetConfigType("yaml")
-	v.SetConfigPermissions(0o600)
 
 	// Empty values are omitted entirely, so an unset key disappears from the
 	// file and the default applies on the next load.
 	for key, value := range map[string]string{
-		"api_key":          cfg.APIKey,
-		"api_url":          cfg.APIURL,
-		"app_url":          cfg.AppURL,
-		"default_output":   cfg.Output,
-		"oauth_token":      cfg.OAuthToken,
-		"oauth_expires_at": cfg.OAuthExpiresAt,
+		"api_key":             cfg.APIKey,
+		"api_url":             cfg.APIURL,
+		"app_url":             cfg.AppURL,
+		"default_output":      cfg.Output,
+		"oauth_token":         cfg.OAuthToken,
+		"oauth_expires_at":    cfg.OAuthExpiresAt,
+		"oauth_refresh_token": cfg.OAuthRefreshToken,
 	} {
 		if value != "" {
 			v.Set(key, value)
 		}
 	}
 
-	if err := v.WriteConfig(); err != nil {
-		// WriteConfig fails if the file doesn't exist yet (fresh install).
-		if err := v.WriteConfigAs(path); err != nil {
-			return err
-		}
+	// CreateTemp makes the file 0600. The .yml suffix is what viper needs to
+	// write it.
+	tmp, err := os.CreateTemp(dir, ".config-*.yml")
+	if err != nil {
+		return err
 	}
-	// Creation modes don't apply to pre-existing files; tighten those too.
-	return os.Chmod(path, 0o600)
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmpPath) }() // no-op once renamed
+
+	if err := v.WriteConfigAs(tmpPath); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, ConfigFilePath())
 }

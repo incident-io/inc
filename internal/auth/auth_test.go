@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ func TestResolve_FlagOverridesAll(t *testing.T) {
 		APIKey: "from-config",
 		APIURL: "https://config.example.com",
 	}
-	key, url, err := Resolve(cfg, "from-flag", "https://flag.example.com")
+	key, url, err := Resolve(context.Background(), cfg, "from-flag", "https://flag.example.com", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func TestResolve_FallsBackToConfig(t *testing.T) {
 		APIKey: "from-config",
 		APIURL: "https://config.example.com",
 	}
-	key, url, err := Resolve(cfg, "", "")
+	key, url, err := Resolve(context.Background(), cfg, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestResolve_DefaultURL(t *testing.T) {
 	cfg := &config.Config{
 		APIKey: "some-key",
 	}
-	_, url, err := Resolve(cfg, "", "")
+	_, url, err := Resolve(context.Background(), cfg, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +58,7 @@ func TestResolve_DefaultURL(t *testing.T) {
 
 func TestResolve_ErrorWhenNoKey(t *testing.T) {
 	cfg := &config.Config{}
-	_, _, err := Resolve(cfg, "", "")
+	_, _, err := Resolve(context.Background(), cfg, "", "", "")
 	if err == nil {
 		t.Fatal("expected error when no API key is set")
 	}
@@ -82,7 +83,7 @@ func TestResolve_URLValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := Resolve(&config.Config{APIKey: "key"}, "", tt.url)
+			_, _, err := Resolve(context.Background(), &config.Config{APIKey: "key"}, "", tt.url, "")
 			if tt.wantErr && err == nil {
 				t.Errorf("expected %q to be rejected", tt.url)
 			}
@@ -98,7 +99,7 @@ func TestResolve_FallsBackToOAuthToken(t *testing.T) {
 		OAuthToken:     "oauth-token",
 		OAuthExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 	}
-	key, _, err := Resolve(cfg, "", "")
+	key, _, err := Resolve(context.Background(), cfg, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +114,7 @@ func TestResolve_APIKeyWinsOverOAuthToken(t *testing.T) {
 		OAuthToken:     "oauth-token",
 		OAuthExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 	}
-	key, _, err := Resolve(cfg, "", "")
+	key, _, err := Resolve(context.Background(), cfg, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestResolve_ExpiredOAuthToken(t *testing.T) {
 		OAuthToken:     "oauth-token",
 		OAuthExpiresAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
 	}
-	_, _, err := Resolve(cfg, "", "")
+	_, _, err := Resolve(context.Background(), cfg, "", "", "")
 	if err == nil {
 		t.Fatal("expected error for expired OAuth token")
 	}
@@ -143,7 +144,7 @@ func TestResolve_OAuthTokenWithUnparseableExpiry(t *testing.T) {
 		OAuthToken:     "oauth-token",
 		OAuthExpiresAt: "not-a-timestamp",
 	}
-	key, _, err := Resolve(cfg, "", "")
+	key, _, err := Resolve(context.Background(), cfg, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

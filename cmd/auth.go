@@ -85,6 +85,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	cfg.APIKey = token
 	cfg.OAuthToken = ""
 	cfg.OAuthExpiresAt = ""
+	cfg.OAuthRefreshToken = ""
 
 	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
@@ -108,13 +109,20 @@ func runAuthLoginOAuth(cmd *cobra.Command) error {
 	cfg.APIKey = ""
 	cfg.OAuthToken = token.AccessToken
 	cfg.OAuthExpiresAt = token.ExpiresAt.UTC().Format(time.RFC3339)
+	cfg.OAuthRefreshToken = token.RefreshToken
 
 	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Logged in. Token saved to %s (expires %s).\n",
-		config.ConfigFilePath(), token.ExpiresAt.Local().Format("2 Jan 2006"))
+	if token.RefreshToken != "" {
+		// The access token is short-lived and renews itself, so its expiry
+		// isn't what the user needs to know.
+		fmt.Fprintf(os.Stderr, "Logged in. Token saved to %s.\n", config.ConfigFilePath())
+	} else {
+		fmt.Fprintf(os.Stderr, "Logged in. Token saved to %s (expires %s).\n",
+			config.ConfigFilePath(), token.ExpiresAt.Local().Format("2 Jan 2006"))
+	}
 	if os.Getenv("INCIDENT_API_KEY") != "" {
 		fmt.Fprintln(os.Stderr, "Note: INCIDENT_API_KEY is set in your environment and takes precedence over this login.")
 	}
@@ -163,7 +171,7 @@ func runAuthToken(cmd *cobra.Command, args []string) error {
 	}
 
 	flagKey, _ := cmd.Flags().GetString("api-key")
-	apiKey, _, err := auth.Resolve(cfg, flagKey, "")
+	apiKey, _, err := auth.Resolve(cmd.Context(), cfg, flagKey, "", version)
 	if err != nil {
 		return err
 	}

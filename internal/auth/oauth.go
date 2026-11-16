@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -30,16 +31,19 @@ const OAuthClientID = "https://app.incident.io/api/oauth/cli-client-metadata.jso
 // Authorization codes expire server-side after 10 minutes anyway.
 const oauthTimeout = 5 * time.Minute
 
-// OAuthToken is the result of a completed browser login.
+// OAuthToken is the result of a completed browser login or a refresh.
+// RefreshToken is empty when the server didn't issue one.
 type OAuthToken struct {
-	AccessToken string
-	ExpiresAt   time.Time
+	AccessToken  string
+	ExpiresAt    time.Time
+	RefreshToken string
 }
 
 // OAuthLogin runs the OAuth 2.0 authorization code + PKCE flow against the
 // incident.io dashboard: it opens the consent page in the user's browser,
 // receives the authorization code on a loopback listener, and exchanges it
-// for an access token (currently 28 days, no refresh token).
+// for an access token. Depending on the organisation, the server issues
+// either a 28-day access token, or a 1-hour access token and a refresh token.
 //
 // Progress messages for the terminal go to out.
 func OAuthLogin(ctx context.Context, appURL, pluginVersion string, out io.Writer) (*OAuthToken, error) {
@@ -145,13 +149,36 @@ func OAuthLogin(ctx context.Context, appURL, pluginVersion string, out io.Writer
 // exchangeToken swaps the authorization code for an access token at the
 // OAuth token endpoint.
 func exchangeToken(ctx context.Context, appURL, pluginVersion, code, verifier, redirectURI string) (*OAuthToken, error) {
-	body, err := json.Marshal(map[string]string{
+	return requestToken(ctx, appURL, pluginVersion, map[string]string{
 		"grant_type":    "authorization_code",
 		"code":          code,
 		"code_verifier": verifier,
 		"redirect_uri":  redirectURI,
 		"client_id":     OAuthClientID,
 	})
+}
+
+// errInvalidGrant is the token endpoint saying a refresh token is invalid,
+// expired, revoked or already used. The login can't be renewed, so the user
+// has to log in again. Any other failure leaves the refresh token usable.
+var errInvalidGrant = errors.New("invalid_grant")
+
+// refreshOAuthToken exchanges a refresh token for a new access token and a
+// new refresh token. The refresh token it was given stops working.
+func refreshOAuthToken(ctx context.Context, appURL, pluginVersion, refreshToken string) (*OAuthToken, error) {
+	if err := validateBaseURL(appURL, "app URL", "https://app.incident.io"); err != nil {
+		return nil, err
+	}
+	return requestToken(ctx, appURL, pluginVersion, map[string]string{
+		"grant_type":    "refresh_token",
+		"refresh_token": refreshToken,
+		"client_id":     OAuthClientID,
+	})
+}
+
+// requestToken sends a token request to the OAuth token endpoint.
+func requestToken(ctx context.Context, appURL, pluginVersion string, payload map[string]string) (*OAuthToken, error) {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -163,8 +190,9 @@ func exchangeToken(ctx context.Context, appURL, pluginVersion, code, verifier, r
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", api.UserAgent(pluginVersion))
 
-	// The shared doer gives the exchange the same timeout and 429/5xx retry
-	// behaviour as every other outbound call.
+	// The shared doer gives the request the same timeout and 429 retry
+	// behaviour as every other outbound call. It never retries a POST after a
+	// network error, so it can't present a refresh token twice.
 	resp, err := api.NewRetryDoer().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange failed: %w", err)
@@ -176,23 +204,32 @@ func exchangeToken(ctx context.Context, appURL, pluginVersion, code, verifier, r
 		return nil, fmt.Errorf("reading token exchange response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		// OAuth errors come back in the RFC 6749 section 5.2 shape.
+		var oauthErr struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(respBody, &oauthErr) == nil && oauthErr.Error == "invalid_grant" {
+			return nil, errInvalidGrant
+		}
 		// Return the structured error so the root command renders exit code,
 		// suggestion, and request ID as it does for every other API error.
 		return nil, api.NewAPIErrorFromResponse(resp.StatusCode, respBody)
 	}
 
 	var parsed struct {
-		AccessToken string `json:"access_token"`
-		TokenType   string `json:"token_type"`
-		ExpiresIn   int    `json:"expires_in"`
+		AccessToken  string `json:"access_token"`
+		TokenType    string `json:"token_type"`
+		ExpiresIn    int    `json:"expires_in"`
+		RefreshToken string `json:"refresh_token"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil || parsed.AccessToken == "" {
 		return nil, fmt.Errorf("token exchange returned an unexpected response")
 	}
 
 	return &OAuthToken{
-		AccessToken: parsed.AccessToken,
-		ExpiresAt:   time.Now().Add(time.Duration(parsed.ExpiresIn) * time.Second),
+		AccessToken:  parsed.AccessToken,
+		ExpiresAt:    time.Now().Add(time.Duration(parsed.ExpiresIn) * time.Second),
+		RefreshToken: parsed.RefreshToken,
 	}, nil
 }
 

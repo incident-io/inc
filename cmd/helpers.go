@@ -23,7 +23,7 @@ func newClient(cmd *cobra.Command) (*incident.ClientWithResponses, error) {
 	}
 	flagKey, _ := cmd.Flags().GetString("api-key")
 	flagURL, _ := cmd.Flags().GetString("api-url")
-	apiKey, apiURL, err := auth.Resolve(cfg, flagKey, flagURL)
+	apiKey, apiURL, err := auth.Resolve(cmd.Context(), cfg, flagKey, flagURL, version)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func newGenericClient(cmd *cobra.Command) (*api.Client, error) {
 	}
 	flagKey, _ := cmd.Flags().GetString("api-key")
 	flagURL, _ := cmd.Flags().GetString("api-url")
-	apiKey, apiURL, err := auth.Resolve(cfg, flagKey, flagURL)
+	apiKey, apiURL, err := auth.Resolve(cmd.Context(), cfg, flagKey, flagURL, version)
 	if err != nil {
 		return nil, err
 	}

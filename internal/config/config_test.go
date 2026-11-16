@@ -1,9 +1,11 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // writeConfig puts a config file where load() will find it and points
@@ -116,6 +118,69 @@ func TestSave_TightensExistingFilePermissions(t *testing.T) {
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Errorf("pre-existing config file must be tightened to 0600, got %o", perm)
 	}
+}
+
+func TestSave_RoundTripsLoginAndLeavesNoTempFiles(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	in := &Config{OAuthToken: "access", OAuthExpiresAt: "2026-01-01T00:00:00Z", OAuthRefreshToken: "refresh"}
+	if err := Save(in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *out != *in {
+		t.Errorf("expected %+v back, got %+v", in, out)
+	}
+
+	entries, err := os.ReadDir(filepath.Dir(ConfigFilePath()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "config.yml" {
+		t.Errorf("expected only config.yml in the config dir, got %v", entries)
+	}
+}
+
+func TestLoadFile_IgnoresEnvironmentAndDefaults(t *testing.T) {
+	// LoadFile feeds read-modify-save, so nothing that isn't in the file may
+	// come back from it and get written into the file.
+	writeConfig(t, "oauth_token: from-file\n")
+	t.Setenv("INCIDENT_API_KEY", "from-env")
+	t.Setenv("INCIDENT_API_URL", "https://env.example.com")
+
+	cfg, err := LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *cfg != (Config{OAuthToken: "from-file"}) {
+		t.Errorf("expected only the file's values, got %+v", cfg)
+	}
+}
+
+func TestLock_IsExclusive(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	unlock, err := Lock(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if _, err := Lock(ctx); err == nil {
+		t.Fatal("expected a second Lock to wait while the first is held")
+	}
+
+	unlock()
+	unlockAgain, err := Lock(context.Background())
+	if err != nil {
+		t.Fatalf("expected Lock to succeed once released: %v", err)
+	}
+	unlockAgain()
 }
 
 func TestLoad_ReturnsIndependentCopies(t *testing.T) {
