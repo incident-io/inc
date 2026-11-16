@@ -79,7 +79,12 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no API key provided")
 	}
 
-	cfg := config.LoadOrDefaults()
+	// Start from the file alone, so environment variables and defaults aren't
+	// written into it.
+	cfg, err := config.LoadFile()
+	if err != nil {
+		cfg = &config.Config{}
+	}
 	// Logging in replaces the stored credential: clear any OAuth token so the
 	// pasted key actually takes effect (and vice versa in the OAuth path).
 	cfg.APIKey = token
@@ -96,11 +101,16 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 }
 
 func runAuthLoginOAuth(cmd *cobra.Command) error {
-	cfg := config.LoadOrDefaults()
-
-	token, err := auth.OAuthLogin(cmd.Context(), cfg.AppURL, version, os.Stderr)
+	// The app URL honours INCIDENT_APP_URL, but what's saved starts from the
+	// file alone, so environment variables and defaults aren't written into it.
+	token, err := auth.OAuthLogin(cmd.Context(), config.LoadOrDefaults().AppURL, version, os.Stderr)
 	if err != nil {
 		return err
+	}
+
+	cfg, err := config.LoadFile()
+	if err != nil {
+		cfg = &config.Config{}
 	}
 
 	// Logging in replaces the stored credential: clear any saved API key so

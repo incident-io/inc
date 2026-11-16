@@ -94,7 +94,9 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid value %q for default_output. Valid values: %s", value, strings.Join(output.Formats, ", "))
 	}
 
-	cfg, err := config.Load()
+	// Start from the file alone, so environment variables and defaults aren't
+	// written into it.
+	cfg, err := config.LoadFile()
 	if err != nil {
 		cfg = &config.Config{}
 	}
@@ -115,7 +117,9 @@ func runConfigUnset(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unknown config key %q. Valid keys: %s", key, strings.Join(validKeysList(), ", "))
 	}
 
-	cfg, err := config.Load()
+	// Start from the file alone, so environment variables and defaults aren't
+	// written into it.
+	cfg, err := config.LoadFile()
 	if err != nil {
 		cfg = &config.Config{}
 	}

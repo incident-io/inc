@@ -68,10 +68,9 @@ func Load() (*Config, error) {
 	return &cp, nil
 }
 
-// LoadOrDefaults is Load for writers like 'auth login' that save a fresh
-// config anyway: when the config file can't be read, it degrades to the
-// defaults instead of an error, so defaulting lives here and not in every
-// caller.
+// LoadOrDefaults is Load that degrades to the defaults instead of an error
+// when the config file can't be read. Don't save what it returns: it includes
+// environment variables and defaults. Writers start from LoadFile.
 func LoadOrDefaults() *Config {
 	cfg, err := Load()
 	if err != nil {
