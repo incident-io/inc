@@ -117,9 +117,9 @@ func runPostmortemsContent(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	format, _, _ := getOutputFlags(cmd)
+	format, jqExpr, fields := getOutputFlags(cmd)
 	if format == "json" {
-		return output.Print(os.Stdout, "json", "", "", resp.Body)
+		return output.Print(os.Stdout, "json", jqExpr, fields, resp.Body)
 	}
 
 	// For table/default output, just print the markdown directly
