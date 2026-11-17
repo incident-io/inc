@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/fatih/color v1.19.0
-	github.com/gofrs/flock v0.13.0
+	github.com/gofrs/flock v0.13.2
 	github.com/google/uuid v1.6.0
 	github.com/incident-io/sdk-go v1.61.0
 	github.com/itchyny/gojq v0.12.20
@@ -37,7 +37,7 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
