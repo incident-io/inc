@@ -3,6 +3,10 @@
 We automatically cut new releases for `sdk-go` bumps, so this changelog only
 lists out non-automated changes.
 
+## 0.6.2 - 2026-11-17
+
+- `inc post-mortems content` applies `--jq` and `--fields` - thanks @pcbeingused333
+
 ## 0.6.0 - 2026-11-16
 
 - `inc auth login` uses a client ID metadata document (CIMD).
