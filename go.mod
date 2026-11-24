@@ -7,7 +7,7 @@ require (
 	github.com/fatih/color v1.19.0
 	github.com/gofrs/flock v0.13.2
 	github.com/google/uuid v1.6.0
-	github.com/incident-io/sdk-go v1.76.0
+	github.com/incident-io/sdk-go v1.79.0
 	github.com/itchyny/gojq v0.12.20
 	github.com/mattn/go-isatty v0.0.24
 	github.com/spf13/cobra v1.10.2
