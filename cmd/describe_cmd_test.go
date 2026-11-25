@@ -46,3 +46,14 @@ func TestDescribe_DotPathSelectsOneCommand(t *testing.T) {
 		t.Errorf("expected the list command node, got: %s", res.stdout)
 	}
 }
+
+func TestDescribe_JQFiltersSchema(t *testing.T) {
+	res := runCommand(t, "describe", "incidents.list", "--output", "json", "--jq", ".name")
+
+	if res.exit != 0 {
+		t.Fatalf("exit = %d, stderr: %s", res.exit, res.stderr)
+	}
+	if name := mustJSON(t, res.stdout); name != "list" {
+		t.Errorf("expected the filtered command name, got: %s", res.stdout)
+	}
+}

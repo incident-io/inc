@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/incident-io/inc/internal/output"
 )
 
 // CommandSchema is the JSON schema for a single command.
@@ -79,6 +81,10 @@ func runDescribe(cmd *cobra.Command, args []string) error {
 	out, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		return err
+	}
+	jqExpr, _ := cmd.Flags().GetString("jq")
+	if jqExpr != "" {
+		return output.Print(os.Stdout, "json", jqExpr, "", out)
 	}
 	_, err = fmt.Fprintln(os.Stdout, string(out))
 	return err
