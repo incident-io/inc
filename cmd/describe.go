@@ -6,9 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/incident-io/inc/internal/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/incident-io/inc/internal/output"
 )
 
 // CommandSchema is the JSON schema for a single command.
