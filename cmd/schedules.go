@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -145,16 +146,45 @@ func runSchedulesEntries(cmd *cobra.Command, args []string) error {
 		params.EntryWindowEnd = &t
 	}
 
-	resp, err := c.SchedulesV2ListScheduleEntriesWithResponse(cmd.Context(), params)
-	if err != nil {
-		return err
-	}
-	if err := handleAPIResponse(resp.StatusCode(), resp.Body); err != nil {
-		return err
+	// The response groups entries into several lists (final, overrides,
+	// scheduled), so paginate, which collects a single array, doesn't fit.
+	all := map[string][]json.RawMessage{}
+	for {
+		resp, err := c.SchedulesV2ListScheduleEntriesWithResponse(cmd.Context(), params)
+		if err != nil {
+			return err
+		}
+		if err := handleAPIResponse(resp.StatusCode(), resp.Body); err != nil {
+			return err
+		}
+
+		data, err := output.UnwrapEnvelope(resp.Body, "schedule_entries")
+		if err != nil {
+			return err
+		}
+		var page map[string][]json.RawMessage
+		if err := json.Unmarshal(data, &page); err != nil {
+			return err
+		}
+		for key, entries := range page {
+			if all[key] == nil {
+				all[key] = entries
+			} else {
+				all[key] = append(all[key], entries...)
+			}
+		}
+
+		cursor := extractAfterCursor(resp.Body)
+		if cursor == "" {
+			break
+		}
+		// The next page is requested by passing the cursor as the window
+		// start, with the window end left as it was.
+		params.EntryWindowStart = &cursor
 	}
 
 	format, jqExpr, fields := getOutputFlags(cmd)
-	data, err := output.UnwrapEnvelope(resp.Body, "schedule_entries")
+	data, err := json.Marshal(all)
 	if err != nil {
 		return err
 	}
